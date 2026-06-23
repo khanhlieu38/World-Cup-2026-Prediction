@@ -1,0 +1,17 @@
+match_no,home_type,home_group,away_type,away_group,third_place_pool
+73,RU,A,RU,B,
+74,W,E,3rd,,A;B;C;D;F
+75,W,F,RU,C,
+76,W,C,RU,F,
+77,W,I,3rd,,C;D;F;G;H
+78,RU,E,RU,I,
+79,W,A,3rd,,C;E;F;H;I
+80,W,L,3rd,,E;H;I;J;K
+81,W,D,3rd,,B;E;F;I;J
+82,W,G,3rd,,A;E;H;I;J
+83,RU,K,RU,L,
+84,W,H,RU,J,
+85,W,B,3rd,,E;F;G;I;J
+86,W,J,RU,H,
+87,W,K,3rd,,D;E;I;J;L
+88,RU,D,RU,G,

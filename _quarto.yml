@@ -1,0 +1,25 @@
+project:
+  type: website
+  output-dir: _site
+
+website:
+  title: "World Cup 2026 Predictor"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Tổng quan
+      - href: 01_eda.ipynb
+        text: EDA & Elo
+      - href: 02_model_training.ipynb
+        text: Model & Vòng bảng
+      - href: 03_knockout_simulation.ipynb
+        text: Knockout & Kết quả
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    code-fold: true
+
+execute:
+  enabled: false
