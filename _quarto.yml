@@ -6,8 +6,6 @@ website:
   title: "World Cup 2026 Predictor"
   navbar:
     left:
-      - href: index.qmd
-        text: Tổng quan
       - href: 01_eda.ipynb
         text: EDA & Elo
       - href: 02_model_training.ipynb
