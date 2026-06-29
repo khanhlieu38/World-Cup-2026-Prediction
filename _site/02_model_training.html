@@ -130,10 +130,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <div class="collapse navbar-collapse" id="navbarCollapse">
             <ul class="navbar-nav navbar-nav-scroll me-auto">
   <li class="nav-item">
-    <a class="nav-link" href="./index.qmd"> 
-<span class="menu-text">Tổng quan</span></a>
-  </li>  
-  <li class="nav-item">
     <a class="nav-link" href="./01_eda.html"> 
 <span class="menu-text">EDA &amp; Elo</span></a>
   </li>  
@@ -162,6 +158,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
    
   <ul>
   <li><a href="#đánh-giá-model-theo-thời-gian" id="toc-đánh-giá-model-theo-thời-gian" class="nav-link active" data-scroll-target="#đánh-giá-model-theo-thời-gian">Đánh giá model theo thời gian</a></li>
+  <li><a href="#calibration-check" id="toc-calibration-check" class="nav-link" data-scroll-target="#calibration-check">Calibration check</a></li>
   <li><a href="#model-phân-loại-cuối-cùng" id="toc-model-phân-loại-cuối-cùng" class="nav-link" data-scroll-target="#model-phân-loại-cuối-cùng">Model phân loại cuối cùng</a></li>
   <li><a href="#model-tỷ-số-cho-monte-carlo" id="toc-model-tỷ-số-cho-monte-carlo" class="nav-link" data-scroll-target="#model-tỷ-số-cho-monte-carlo">Model tỷ số cho Monte Carlo</a></li>
   <li><a href="#xếp-hạng-và-tie-break" id="toc-xếp-hạng-và-tie-break" class="nav-link" data-scroll-target="#xếp-hạng-và-tie-break">Xếp hạng và tie-break</a></li>
@@ -192,39 +189,53 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 <p>Notebook này đánh giá model theo thời gian, refit bằng toàn bộ trận đã đá, rồi mô phỏng vòng bảng bằng tỷ số để có thể xử lý tie-break.</p>
-<div id="imports-load" class="cell" data-execution_count="165">
+<div id="imports-load" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-06-29T06:34:45.247770Z&quot;,&quot;iopub.status.busy&quot;:&quot;2026-06-29T06:34:45.247383Z&quot;,&quot;iopub.status.idle&quot;:&quot;2026-06-29T06:34:47.522520Z&quot;,&quot;shell.execute_reply&quot;:&quot;2026-06-29T06:34:47.521560Z&quot;}}" data-execution_count="1">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> collections <span class="im">import</span> defaultdict</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> itertools <span class="im">import</span> groupby</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.impute <span class="im">import</span> SimpleImputer</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.linear_model <span class="im">import</span> LogisticRegression, PoissonRegressor</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.metrics <span class="im">import</span> accuracy_score, log_loss, mean_absolute_error</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.pipeline <span class="im">import</span> make_pipeline</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.preprocessing <span class="im">import</span> StandardScaler</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>df_recent <span class="op">=</span> pd.read_csv(<span class="st">"data/processed/matches_features.csv"</span>, parse_dates<span class="op">=</span>[<span class="st">"date"</span>])</span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>upcoming_matches <span class="op">=</span> pd.read_csv(<span class="st">"data/processed/upcoming_matches.csv"</span>, parse_dates<span class="op">=</span>[<span class="st">"date"</span>])</span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> df_recent[<span class="st">"outcome"</span>].notna().<span class="bu">all</span>()</span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> upcoming_matches[<span class="st">"outcome"</span>].isna().<span class="bu">all</span>()</span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> df_recent.duplicated().<span class="bu">sum</span>() <span class="op">==</span> <span class="dv">0</span></span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Trận đã đá:"</span>, df_recent.shape)</span>
-<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Trận chưa đá:"</span>, upcoming_matches.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> pathlib <span class="im">import</span> Path</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> sys</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>sys.path.append(<span class="bu">str</span>(Path(<span class="st">"src"</span>).resolve()))</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> wc2026_predictor.config <span class="im">import</span> FINAL_FEATURES, FORM_FEATURES</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> wc2026_predictor.modeling <span class="im">import</span> (</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    baseline_scores,</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    calibration_table,</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    classifier_classes,</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    evaluate_classifier_candidates,</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    evaluate_goal_models,</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    fit_goal_models,</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    fit_outcome_model,</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    predict_goal_rates <span class="im">as</span> model_predict_goal_rates,</span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    predict_outcome_probabilities,</span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    recency_weights,</span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> wc2026_predictor.simulation <span class="im">import</span> calculate_table, rank_group</span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>df_recent <span class="op">=</span> pd.read_csv(<span class="st">"data/processed/matches_features.csv"</span>, parse_dates<span class="op">=</span>[<span class="st">"date"</span>])</span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>upcoming_matches <span class="op">=</span> pd.read_csv(<span class="st">"data/processed/upcoming_matches.csv"</span>, parse_dates<span class="op">=</span>[<span class="st">"date"</span>])</span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> df_recent[<span class="st">"outcome"</span>].notna().<span class="bu">all</span>()</span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> upcoming_matches[<span class="st">"outcome"</span>].isna().<span class="bu">all</span>()</span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> df_recent.duplicated().<span class="bu">sum</span>() <span class="op">==</span> <span class="dv">0</span></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Tr?n ?? ??:"</span>, df_recent.shape)</span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Tr?n ch?a ??:"</span>, upcoming_matches.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
-<pre><code>Trận đã đá: (10784, 19)
-Trận chưa đá: (32, 19)</code></pre>
+<pre><code>Tr?n ?? ??: (10784, 19)
+Tr?n ch?a ??: (32, 19)</code></pre>
 </div>
 </div>
 <section id="đánh-giá-model-theo-thời-gian" class="level2">
 <h2 class="anchored" data-anchor-id="đánh-giá-model-theo-thời-gian">Đánh giá model theo thời gian</h2>
 <p>Các trận trước năm 2024 dùng để train; các trận từ năm 2024 trở đi dùng để test. Elo của mỗi dòng đã được ghi <strong>trước trận</strong>, nên phép đánh giá tương ứng với dự báo tuần tự theo thời gian.</p>
-<div id="time-split" class="cell" data-execution_count="166">
+<div id="time-split" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-06-29T06:34:47.527388Z&quot;,&quot;iopub.status.busy&quot;:&quot;2026-06-29T06:34:47.526973Z&quot;,&quot;iopub.status.idle&quot;:&quot;2026-06-29T06:34:47.536800Z&quot;,&quot;shell.execute_reply&quot;:&quot;2026-06-29T06:34:47.536087Z&quot;}}" data-execution_count="2">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>CUTOFF_DATE <span class="op">=</span> pd.Timestamp(<span class="st">"2024-01-01"</span>)</span>
@@ -234,80 +245,38 @@ Trận chưa đá: (32, 19)</code></pre>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Train:"</span>, train.shape)</span>
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Test:"</span>, test.shape)</span>
 <span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>RECENCY_HALF_LIFE_YEARS <span class="op">=</span> <span class="dv">4</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>FORM_FEATURES <span class="op">=</span> [</span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    <span class="st">"home_points_form"</span>, <span class="st">"away_points_form"</span>,</span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    <span class="st">"home_gf_form"</span>, <span class="st">"away_gf_form"</span>,</span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="st">"home_ga_form"</span>, <span class="st">"away_ga_form"</span>,</span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>]</span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> recency_weights(dates):</span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    age_years <span class="op">=</span> (dates.<span class="bu">max</span>() <span class="op">-</span> dates).dt.days <span class="op">/</span> <span class="fl">365.25</span></span>
-<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="fl">0.5</span> <span class="op">**</span> (age_years <span class="op">/</span> RECENCY_HALF_LIFE_YEARS)</span>
-<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>train_weights <span class="op">=</span> recency_weights(train[<span class="st">"date"</span>])</span>
-<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>full_weights <span class="op">=</span> recency_weights(df_recent[<span class="st">"date"</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>train_weights <span class="op">=</span> recency_weights(train[<span class="st">"date"</span>])</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>full_weights <span class="op">=</span> recency_weights(df_recent[<span class="st">"date"</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>Train: (8872, 19)
 Test: (1912, 19)</code></pre>
 </div>
 </div>
-<div id="class-models" class="cell" data-execution_count="167">
+<div id="class-models" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-06-29T06:34:47.538721Z&quot;,&quot;iopub.status.busy&quot;:&quot;2026-06-29T06:34:47.538461Z&quot;,&quot;iopub.status.idle&quot;:&quot;2026-06-29T06:34:47.709780Z&quot;,&quot;shell.execute_reply&quot;:&quot;2026-06-29T06:34:47.708945Z&quot;}}" data-execution_count="3">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> make_classifier():</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> make_pipeline(</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>        SimpleImputer(strategy<span class="op">=</span><span class="st">"median"</span>),</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>        StandardScaler(),</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>        LogisticRegression(max_iter<span class="op">=</span><span class="dv">2000</span>),</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> classifier_classes(model):</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> model.named_steps[<span class="st">"logisticregression"</span>].classes_</span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>candidate_features <span class="op">=</span> {</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="st">"elo_only"</span>: [<span class="st">"elo_diff"</span>],</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">"elo_and_neutral"</span>: [<span class="st">"elo_diff"</span>, <span class="st">"neutral"</span>],</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">"elo_neutral_and_form"</span>: FINAL_FEATURES,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>subsets <span class="op">=</span> {</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">"all_test"</span>: pd.Series(<span class="va">True</span>, index<span class="op">=</span>test.index),</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    <span class="st">"neutral_test"</span>: test[<span class="st">"neutral"</span>].eq(<span class="va">True</span>),</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    <span class="st">"world_cup_test"</span>: test[<span class="st">"tournament"</span>].eq(<span class="st">"FIFA World Cup"</span>),</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>}</span>
 <span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>candidate_features <span class="op">=</span> {</span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>    <span class="st">"elo_only"</span>: [<span class="st">"elo_diff"</span>],</span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>    <span class="st">"elo_and_neutral"</span>: [<span class="st">"elo_diff"</span>, <span class="st">"neutral"</span>],</span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>    <span class="st">"elo_neutral_and_form"</span>: [<span class="st">"elo_diff"</span>, <span class="st">"neutral"</span>] <span class="op">+</span> FORM_FEATURES,</span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>evaluation_rows <span class="op">=</span> []</span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>validation_models <span class="op">=</span> {}</span>
-<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>subsets <span class="op">=</span> {</span>
-<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>    <span class="st">"all_test"</span>: pd.Series(<span class="va">True</span>, index<span class="op">=</span>test.index),</span>
-<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    <span class="st">"neutral_test"</span>: test[<span class="st">"neutral"</span>].eq(<span class="va">True</span>),</span>
-<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>    <span class="st">"world_cup_test"</span>: test[<span class="st">"tournament"</span>].eq(<span class="st">"FIFA World Cup"</span>),</span>
-<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> model_name, features <span class="kw">in</span> candidate_features.items():</span>
-<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>    fitted <span class="op">=</span> make_classifier()</span>
-<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>    fitted.fit(</span>
-<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>        train[features],</span>
-<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>        train[<span class="st">"outcome"</span>],</span>
-<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>        logisticregression__sample_weight<span class="op">=</span>train_weights,</span>
-<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a>    validation_models[model_name] <span class="op">=</span> fitted</span>
-<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a>    classes <span class="op">=</span> classifier_classes(fitted)</span>
-<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> subset_name, mask <span class="kw">in</span> subsets.items():</span>
-<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>        subset <span class="op">=</span> test.loc[mask]</span>
-<span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a>        probabilities <span class="op">=</span> fitted.predict_proba(subset[features])</span>
-<span id="cb5-40"><a href="#cb5-40" aria-hidden="true" tabindex="-1"></a>        predictions <span class="op">=</span> fitted.predict(subset[features])</span>
-<span id="cb5-41"><a href="#cb5-41" aria-hidden="true" tabindex="-1"></a>        evaluation_rows.append({</span>
-<span id="cb5-42"><a href="#cb5-42" aria-hidden="true" tabindex="-1"></a>            <span class="st">"model"</span>: model_name,</span>
-<span id="cb5-43"><a href="#cb5-43" aria-hidden="true" tabindex="-1"></a>            <span class="st">"subset"</span>: subset_name,</span>
-<span id="cb5-44"><a href="#cb5-44" aria-hidden="true" tabindex="-1"></a>            <span class="st">"n_matches"</span>: <span class="bu">len</span>(subset),</span>
-<span id="cb5-45"><a href="#cb5-45" aria-hidden="true" tabindex="-1"></a>            <span class="st">"accuracy"</span>: accuracy_score(subset[<span class="st">"outcome"</span>], predictions),</span>
-<span id="cb5-46"><a href="#cb5-46" aria-hidden="true" tabindex="-1"></a>            <span class="st">"log_loss"</span>: log_loss(subset[<span class="st">"outcome"</span>], probabilities, labels<span class="op">=</span>classes),</span>
-<span id="cb5-47"><a href="#cb5-47" aria-hidden="true" tabindex="-1"></a>        })</span>
-<span id="cb5-48"><a href="#cb5-48" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-49"><a href="#cb5-49" aria-hidden="true" tabindex="-1"></a>evaluation <span class="op">=</span> pd.DataFrame(evaluation_rows)</span>
-<span id="cb5-50"><a href="#cb5-50" aria-hidden="true" tabindex="-1"></a>evaluation</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>evaluation, validation_models <span class="op">=</span> evaluate_classifier_candidates(</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>    train,</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>    test,</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>    candidate_features,</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>    subsets,</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>evaluation</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
-<div class="cell-output cell-output-display" data-execution_count="167">
+<div class="cell-output cell-output-display" data-execution_count="3">
 <div>
 
 
@@ -320,6 +289,7 @@ Test: (1912, 19)</code></pre>
 <th data-quarto-table-cell-role="th">n_matches</th>
 <th data-quarto-table-cell-role="th">accuracy</th>
 <th data-quarto-table-cell-role="th">log_loss</th>
+<th data-quarto-table-cell-role="th">brier_score</th>
 </tr>
 </thead>
 <tbody>
@@ -330,6 +300,7 @@ Test: (1912, 19)</code></pre>
 <td>1912</td>
 <td>0.595711</td>
 <td>0.879457</td>
+<td>0.516826</td>
 </tr>
 <tr class="even">
 <th data-quarto-table-cell-role="th">1</th>
@@ -338,6 +309,7 @@ Test: (1912, 19)</code></pre>
 <td>700</td>
 <td>0.537143</td>
 <td>0.964931</td>
+<td>0.573593</td>
 </tr>
 <tr class="odd">
 <th data-quarto-table-cell-role="th">2</th>
@@ -346,6 +318,7 @@ Test: (1912, 19)</code></pre>
 <td>40</td>
 <td>0.475000</td>
 <td>1.003245</td>
+<td>0.606377</td>
 </tr>
 <tr class="even">
 <th data-quarto-table-cell-role="th">3</th>
@@ -354,6 +327,7 @@ Test: (1912, 19)</code></pre>
 <td>1912</td>
 <td>0.592050</td>
 <td>0.879692</td>
+<td>0.517199</td>
 </tr>
 <tr class="odd">
 <th data-quarto-table-cell-role="th">4</th>
@@ -362,6 +336,7 @@ Test: (1912, 19)</code></pre>
 <td>700</td>
 <td>0.540000</td>
 <td>0.964542</td>
+<td>0.573696</td>
 </tr>
 <tr class="even">
 <th data-quarto-table-cell-role="th">5</th>
@@ -370,6 +345,7 @@ Test: (1912, 19)</code></pre>
 <td>40</td>
 <td>0.500000</td>
 <td>1.001096</td>
+<td>0.603892</td>
 </tr>
 <tr class="odd">
 <th data-quarto-table-cell-role="th">6</th>
@@ -378,6 +354,7 @@ Test: (1912, 19)</code></pre>
 <td>1912</td>
 <td>0.596234</td>
 <td>0.871229</td>
+<td>0.511442</td>
 </tr>
 <tr class="even">
 <th data-quarto-table-cell-role="th">7</th>
@@ -386,6 +363,7 @@ Test: (1912, 19)</code></pre>
 <td>700</td>
 <td>0.552857</td>
 <td>0.944149</td>
+<td>0.560277</td>
 </tr>
 <tr class="odd">
 <th data-quarto-table-cell-role="th">8</th>
@@ -394,6 +372,7 @@ Test: (1912, 19)</code></pre>
 <td>40</td>
 <td>0.500000</td>
 <td>0.976585</td>
+<td>0.589013</td>
 </tr>
 </tbody>
 </table>
@@ -401,1664 +380,286 @@ Test: (1912, 19)</code></pre>
 </div>
 </div>
 </div>
-<div id="baseline" class="cell" data-execution_count="168">
+<div id="baseline" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-06-29T06:34:47.711564Z&quot;,&quot;iopub.status.busy&quot;:&quot;2026-06-29T06:34:47.711295Z&quot;,&quot;iopub.status.idle&quot;:&quot;2026-06-29T06:34:47.720828Z&quot;,&quot;shell.execute_reply&quot;:&quot;2026-06-29T06:34:47.720005Z&quot;}}" data-execution_count="4">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>class_order <span class="op">=</span> <span class="bu">sorted</span>(train[<span class="st">"outcome"</span>].unique())</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>train_prior <span class="op">=</span> train[<span class="st">"outcome"</span>].value_counts(normalize<span class="op">=</span><span class="va">True</span>).reindex(class_order)</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>baseline_probabilities <span class="op">=</span> np.tile(train_prior.to_numpy(), (<span class="bu">len</span>(test), <span class="dv">1</span>))</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>baseline_prediction <span class="op">=</span> train_prior.idxmax()</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Baseline accuracy:"</span>, <span class="bu">round</span>((test[<span class="st">"outcome"</span>] <span class="op">==</span> baseline_prediction).mean(), <span class="dv">3</span>))</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Baseline log loss:"</span>, <span class="bu">round</span>(log_loss(test[<span class="st">"outcome"</span>], baseline_probabilities, labels<span class="op">=</span>class_order), <span class="dv">3</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>baseline <span class="op">=</span> baseline_scores(train, test)</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Baseline accuracy:"</span>, <span class="bu">round</span>(baseline[<span class="st">"accuracy"</span>], <span class="dv">3</span>))</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Baseline log loss:"</span>, <span class="bu">round</span>(baseline[<span class="st">"log_loss"</span>], <span class="dv">3</span>))</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Baseline Brier score:"</span>, <span class="bu">round</span>(baseline[<span class="st">"brier_score"</span>], <span class="dv">3</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>Baseline accuracy: 0.468
-Baseline log loss: 1.057</code></pre>
+Baseline log loss: 1.057
+Baseline Brier score: 0.638</code></pre>
+</div>
+</div>
+</section>
+<section id="calibration-check" class="level2">
+<h2 class="anchored" data-anchor-id="calibration-check">Calibration check</h2>
+<p>Brier score and calibration bins show whether probabilities are usable as probabilities, not only as class labels.</p>
+<div id="edc02d6f" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-06-29T06:34:47.722880Z&quot;,&quot;iopub.status.busy&quot;:&quot;2026-06-29T06:34:47.722530Z&quot;,&quot;iopub.status.idle&quot;:&quot;2026-06-29T06:34:47.863480Z&quot;,&quot;shell.execute_reply&quot;:&quot;2026-06-29T06:34:47.862312Z&quot;}}" data-execution_count="5">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>best_model_name <span class="op">=</span> <span class="st">"elo_neutral_and_form"</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>best_features <span class="op">=</span> candidate_features[best_model_name]</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>best_model <span class="op">=</span> validation_models[best_model_name]</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>classes <span class="op">=</span> classifier_classes(best_model)</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>test_probabilities <span class="op">=</span> best_model.predict_proba(test[best_features])</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>calibration <span class="op">=</span> calibration_table(test[<span class="st">"outcome"</span>], test_probabilities, classes, n_bins<span class="op">=</span><span class="dv">8</span>)</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>fig, ax <span class="op">=</span> plt.subplots(figsize<span class="op">=</span>(<span class="dv">6</span>, <span class="dv">5</span>))</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> outcome <span class="kw">in</span> classes:</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>    subset <span class="op">=</span> calibration[calibration[<span class="st">"class"</span>].eq(outcome)]</span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>    ax.plot(</span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>        subset[<span class="st">"mean_predicted"</span>],</span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>        subset[<span class="st">"observed_rate"</span>],</span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>        marker<span class="op">=</span><span class="st">"o"</span>,</span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>        linewidth<span class="op">=</span><span class="fl">1.5</span>,</span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>        label<span class="op">=</span>outcome,</span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>ax.plot([<span class="dv">0</span>, <span class="dv">1</span>], [<span class="dv">0</span>, <span class="dv">1</span>], linestyle<span class="op">=</span><span class="st">"--"</span>, color<span class="op">=</span><span class="st">"#666666"</span>, linewidth<span class="op">=</span><span class="dv">1</span>)</span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>ax.set_xlabel(<span class="st">"Mean predicted probability"</span>)</span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>ax.set_ylabel(<span class="st">"Observed rate"</span>)</span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>ax.set_title(<span class="st">"Calibration by outcome class on 2024+ test matches"</span>)</span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a>ax.legend(frameon<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a>calibration.head(<span class="dv">12</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="02_model_training_files/figure-html/cell-6-output-1.png" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display" data-execution_count="5">
+<div>
+
+
+<table class="dataframe caption-top table table-sm table-striped small" data-border="1">
+<thead>
+<tr class="header">
+<th data-quarto-table-cell-role="th"></th>
+<th data-quarto-table-cell-role="th">class</th>
+<th data-quarto-table-cell-role="th">bin_low</th>
+<th data-quarto-table-cell-role="th">bin_high</th>
+<th data-quarto-table-cell-role="th">n</th>
+<th data-quarto-table-cell-role="th">mean_predicted</th>
+<th data-quarto-table-cell-role="th">observed_rate</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">0</th>
+<td>away_win</td>
+<td>0.000</td>
+<td>0.125</td>
+<td>568</td>
+<td>0.059596</td>
+<td>0.054577</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">1</th>
+<td>away_win</td>
+<td>0.125</td>
+<td>0.250</td>
+<td>422</td>
+<td>0.182695</td>
+<td>0.187204</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">2</th>
+<td>away_win</td>
+<td>0.250</td>
+<td>0.375</td>
+<td>263</td>
+<td>0.311114</td>
+<td>0.346008</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">3</th>
+<td>away_win</td>
+<td>0.375</td>
+<td>0.500</td>
+<td>214</td>
+<td>0.438245</td>
+<td>0.406542</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">4</th>
+<td>away_win</td>
+<td>0.500</td>
+<td>0.625</td>
+<td>181</td>
+<td>0.559355</td>
+<td>0.464088</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">5</th>
+<td>away_win</td>
+<td>0.625</td>
+<td>0.750</td>
+<td>131</td>
+<td>0.684257</td>
+<td>0.664122</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">6</th>
+<td>away_win</td>
+<td>0.750</td>
+<td>0.875</td>
+<td>94</td>
+<td>0.803949</td>
+<td>0.808511</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">7</th>
+<td>away_win</td>
+<td>0.875</td>
+<td>1.000</td>
+<td>39</td>
+<td>0.915675</td>
+<td>0.948718</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">8</th>
+<td>draw</td>
+<td>0.000</td>
+<td>0.125</td>
+<td>235</td>
+<td>0.087856</td>
+<td>0.093617</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">9</th>
+<td>draw</td>
+<td>0.125</td>
+<td>0.250</td>
+<td>1031</td>
+<td>0.195578</td>
+<td>0.209505</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">10</th>
+<td>draw</td>
+<td>0.250</td>
+<td>0.375</td>
+<td>646</td>
+<td>0.283811</td>
+<td>0.321981</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">11</th>
+<td>home_win</td>
+<td>0.000</td>
+<td>0.125</td>
+<td>217</td>
+<td>0.066533</td>
+<td>0.078341</td>
+</tr>
+</tbody>
+</table>
+
+</div>
 </div>
 </div>
 </section>
 <section id="model-phân-loại-cuối-cùng" class="level2">
 <h2 class="anchored" data-anchor-id="model-phân-loại-cuối-cùng">Model phân loại cuối cùng</h2>
 <p>Model cuối giữ <code>neutral</code> và form 5 trận gần nhất vì chúng cải thiện log loss trên tập test theo thời gian, đặc biệt ở sân trung lập. Dữ liệu cũ được giảm trọng số với half-life 4 năm. Sau khi đánh giá, model được refit bằng <strong>toàn bộ trận đã đá</strong>.</p>
-<div id="final-classifier" class="cell" data-execution_count="169">
+<div id="final-classifier" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-06-29T06:34:47.865409Z&quot;,&quot;iopub.status.busy&quot;:&quot;2026-06-29T06:34:47.865098Z&quot;,&quot;iopub.status.idle&quot;:&quot;2026-06-29T06:34:47.912364Z&quot;,&quot;shell.execute_reply&quot;:&quot;2026-06-29T06:34:47.911434Z&quot;}}" data-execution_count="6">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>FINAL_FEATURES <span class="op">=</span> [<span class="st">"elo_diff"</span>, <span class="st">"neutral"</span>] <span class="op">+</span> FORM_FEATURES</span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>final_model <span class="op">=</span> make_classifier()</span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>final_model.fit(</span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    df_recent[FINAL_FEATURES],</span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    df_recent[<span class="st">"outcome"</span>],</span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    logisticregression__sample_weight<span class="op">=</span>full_weights,</span>
-<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> predict_outcome_probabilities(model, row, features<span class="op">=</span>FINAL_FEATURES):</span>
-<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>    feature_row <span class="op">=</span> pd.DataFrame([{feature: row[feature] <span class="cf">for</span> feature <span class="kw">in</span> features}])</span>
-<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>    probabilities <span class="op">=</span> model.predict_proba(feature_row)[<span class="dv">0</span>]</span>
-<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="bu">dict</span>(<span class="bu">zip</span>(classifier_classes(model), probabilities))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>final_model <span class="op">=</span> fit_outcome_model(df_recent, FINAL_FEATURES)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
 </section>
 <section id="model-tỷ-số-cho-monte-carlo" class="level2">
 <h2 class="anchored" data-anchor-id="model-tỷ-số-cho-monte-carlo">Model tỷ số cho Monte Carlo</h2>
 <p>Logistic Regression chỉ tạo kết quả thắng/hòa/thua nên không đủ để xếp hạng khi bằng điểm. Hai Poisson Regression dưới đây dự đoán số bàn của đội nhà và đội khách; nhờ đó mô phỏng có thể tính hiệu số và bàn thắng.</p>
-<div id="goal-models" class="cell" data-execution_count="170">
+<div id="goal-models" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-06-29T06:34:47.914183Z&quot;,&quot;iopub.status.busy&quot;:&quot;2026-06-29T06:34:47.913988Z&quot;,&quot;iopub.status.idle&quot;:&quot;2026-06-29T06:34:48.524675Z&quot;,&quot;shell.execute_reply&quot;:&quot;2026-06-29T06:34:48.523636Z&quot;}}" data-execution_count="7">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>GOAL_FEATURES <span class="op">=</span> FINAL_FEATURES</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> make_goal_model():</span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> make_pipeline(</span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>        SimpleImputer(strategy<span class="op">=</span><span class="st">"median"</span>),</span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>        StandardScaler(),</span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>        PoissonRegressor(alpha<span class="op">=</span><span class="fl">0.1</span>, max_iter<span class="op">=</span><span class="dv">2000</span>),</span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>home_goal_validation <span class="op">=</span> make_goal_model()</span>
-<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>away_goal_validation <span class="op">=</span> make_goal_model()</span>
-<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>home_goal_validation.fit(</span>
-<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>    train[GOAL_FEATURES], train[<span class="st">"home_score"</span>],</span>
-<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>    poissonregressor__sample_weight<span class="op">=</span>train_weights,</span>
-<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>away_goal_validation.fit(</span>
-<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>    train[GOAL_FEATURES], train[<span class="st">"away_score"</span>],</span>
-<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>    poissonregressor__sample_weight<span class="op">=</span>train_weights,</span>
-<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>home_mae <span class="op">=</span> mean_absolute_error(</span>
-<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>    test[<span class="st">"home_score"</span>], home_goal_validation.predict(test[GOAL_FEATURES])</span>
-<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a>away_mae <span class="op">=</span> mean_absolute_error(</span>
-<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a>    test[<span class="st">"away_score"</span>], away_goal_validation.predict(test[GOAL_FEATURES])</span>
-<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"MAE bàn đội nhà:"</span>, <span class="bu">round</span>(home_mae, <span class="dv">3</span>))</span>
-<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"MAE bàn đội khách:"</span>, <span class="bu">round</span>(away_mae, <span class="dv">3</span>))</span>
-<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-32"><a href="#cb9-32" aria-hidden="true" tabindex="-1"></a>home_goal_model <span class="op">=</span> make_goal_model()</span>
-<span id="cb9-33"><a href="#cb9-33" aria-hidden="true" tabindex="-1"></a>away_goal_model <span class="op">=</span> make_goal_model()</span>
-<span id="cb9-34"><a href="#cb9-34" aria-hidden="true" tabindex="-1"></a>home_goal_model.fit(</span>
-<span id="cb9-35"><a href="#cb9-35" aria-hidden="true" tabindex="-1"></a>    df_recent[GOAL_FEATURES], df_recent[<span class="st">"home_score"</span>],</span>
-<span id="cb9-36"><a href="#cb9-36" aria-hidden="true" tabindex="-1"></a>    poissonregressor__sample_weight<span class="op">=</span>full_weights,</span>
-<span id="cb9-37"><a href="#cb9-37" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb9-38"><a href="#cb9-38" aria-hidden="true" tabindex="-1"></a>away_goal_model.fit(</span>
-<span id="cb9-39"><a href="#cb9-39" aria-hidden="true" tabindex="-1"></a>    df_recent[GOAL_FEATURES], df_recent[<span class="st">"away_score"</span>],</span>
-<span id="cb9-40"><a href="#cb9-40" aria-hidden="true" tabindex="-1"></a>    poissonregressor__sample_weight<span class="op">=</span>full_weights,</span>
-<span id="cb9-41"><a href="#cb9-41" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>GOAL_FEATURES <span class="op">=</span> FINAL_FEATURES</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>goal_metrics <span class="op">=</span> evaluate_goal_models(train, test, GOAL_FEATURES)</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"MAE b?n ??i nh?:"</span>, <span class="bu">round</span>(goal_metrics[<span class="st">"home_mae"</span>], <span class="dv">3</span>))</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"MAE b?n ??i kh?ch:"</span>, <span class="bu">round</span>(goal_metrics[<span class="st">"away_mae"</span>], <span class="dv">3</span>))</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>home_goal_model, away_goal_model <span class="op">=</span> fit_goal_models(df_recent, GOAL_FEATURES)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
-<pre><code>MAE bàn đội nhà: 1.059
-MAE bàn đội khách: 0.882</code></pre>
+<pre><code>MAE b?n ??i nh?: 1.059
+MAE b?n ??i kh?ch: 0.882</code></pre>
 </div>
-<div class="cell-output cell-output-display" data-execution_count="170">
-<style>.sk-global {
-  /* Definition of color scheme common for light and dark mode */
-  --sklearn-color-text: #000;
-  --sklearn-color-text-muted: #666;
-  --sklearn-color-line: gray;
-  /* Definition of color scheme for unfitted estimators */
-  --sklearn-color-unfitted-level-0: #fff5e6;
-  --sklearn-color-unfitted-level-1: #f6e4d2;
-  --sklearn-color-unfitted-level-2: #ffe0b3;
-  --sklearn-color-unfitted-level-3: chocolate;
-  /* Definition of color scheme for fitted estimators */
-  --sklearn-color-fitted-level-0: #f0f8ff;
-  --sklearn-color-fitted-level-1: #d4ebff;
-  --sklearn-color-fitted-level-2: #b3dbfd;
-  --sklearn-color-fitted-level-3: cornflowerblue;
-}
-
-.sk-global.light {
-  /* Specific color for light theme */
-  --sklearn-color-text-on-default-background: black;
-  --sklearn-color-background: white;
-  --sklearn-color-border-box: black;
-  --sklearn-color-icon: #696969;
-}
-
-.sk-global.dark {
-  --sklearn-color-text-on-default-background: white;
-  --sklearn-color-background: #111;
-  --sklearn-color-border-box: white;
-  --sklearn-color-icon: #878787;
-}
-
-.sk-global {
-  color: var(--sklearn-color-text);
-}
-
-.sk-global pre {
-  padding: 0;
-}
-
-.sk-global input.sk-hidden--visually {
-  border: 0;
-  clip-path: inset(100%);
-  height: 1px;
-  margin: -1px;
-  overflow: hidden;
-  padding: 0;
-  position: absolute;
-  width: 1px;
-}
-
-.sk-global div.sk-dashed-wrapped {
-  border: 1px dashed var(--sklearn-color-line);
-  margin: 0 0.4em 0.5em 0.4em;
-  box-sizing: border-box;
-  padding-bottom: 0.4em;
-  background-color: var(--sklearn-color-background);
-}
-
-.sk-global div.sk-container {
-  /* jupyter's `normalize.less` sets `[hidden] { display: none; }`
-     but bootstrap.min.css set `[hidden] { display: none !important; }`
-     so we also need the `!important` here to be able to override the
-     default hidden behavior on the sphinx rendered scikit-learn.org.
-     See: https://github.com/scikit-learn/scikit-learn/issues/21755 */
-  display: inline-block !important;
-  position: relative;
-}
-
-.sk-global div.sk-text-repr-fallback {
-  display: none;
-}
-
-div.sk-parallel-item,
-div.sk-serial,
-div.sk-item {
-  /* draw centered vertical line to link estimators */
-  background-image: linear-gradient(var(--sklearn-color-text-on-default-background), var(--sklearn-color-text-on-default-background));
-  background-size: 2px 100%;
-  background-repeat: no-repeat;
-  background-position: center center;
-}
-
-/* Parallel-specific style estimator block */
-
-.sk-global div.sk-parallel-item::after {
-  content: "";
-  width: 100%;
-  border-bottom: 2px solid var(--sklearn-color-text-on-default-background);
-  flex-grow: 1;
-}
-
-.sk-global div.sk-parallel {
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  background-color: var(--sklearn-color-background);
-  position: relative;
-}
-
-.sk-global div.sk-parallel-item {
-  display: flex;
-  flex-direction: column;
-}
-
-.sk-global div.sk-parallel-item:first-child::after {
-  align-self: flex-end;
-  width: 50%;
-}
-
-.sk-global div.sk-parallel-item:last-child::after {
-  align-self: flex-start;
-  width: 50%;
-}
-
-.sk-global div.sk-parallel-item:only-child::after {
-  width: 0;
-}
-
-/* Serial-specific style estimator block */
-
-.sk-global div.sk-serial {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  background-color: var(--sklearn-color-background);
-  padding-right: 1em;
-  padding-left: 1em;
-}
-
-
-/* Toggleable style: style used for estimator/Pipeline/ColumnTransformer box that is
-clickable and can be expanded/collapsed.
-- Pipeline and ColumnTransformer use this feature and define the default style
-- Estimators will overwrite some part of the style using the `sk-estimator` class
-*/
-
-/* Pipeline and ColumnTransformer style (default) */
-
-.sk-global div.sk-toggleable {
-  /* Default theme specific background. It is overwritten whether we have a
-  specific estimator or a Pipeline/ColumnTransformer */
-  background-color: var(--sklearn-color-background);
-}
-
-/* Toggleable label */
-.sk-global label.sk-toggleable__label {
-  cursor: pointer;
-  display: flex;
-  width: 100%;
-  margin-bottom: 0;
-  padding: 0.5em;
-  box-sizing: border-box;
-  text-align: center;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5em;
-}
-
-.sk-global label.sk-toggleable__label .caption {
-  font-size: 0.6rem;
-  font-weight: lighter;
-  color: var(--sklearn-color-text-muted);
-}
-
-.sk-global label.sk-toggleable__label-arrow:before {
-  /* Arrow on the left of the label */
-  content: "▸";
-  float: left;
-  margin-right: 0.25em;
-  color: var(--sklearn-color-icon);
-}
-
-.sk-global label.sk-toggleable__label-arrow:hover:before {
-  color: var(--sklearn-color-text);
-}
-
-/* Toggleable content - dropdown */
-
-.sk-global div.sk-toggleable__content {
-  display: none;
-  text-align: left;
-  /* unfitted */
-  background-color: var(--sklearn-color-unfitted-level-0);
-}
-
-.sk-global div.sk-toggleable__content.fitted {
-  /* fitted */
-  background-color: var(--sklearn-color-fitted-level-0);
-}
-
-.sk-global div.sk-toggleable__content pre {
-  margin: 0.2em;
-  border-radius: 0.25em;
-  color: var(--sklearn-color-text);
-  /* unfitted */
-  background-color: var(--sklearn-color-unfitted-level-0);
-}
-
-.sk-global div.sk-toggleable__content.fitted pre {
-  /* unfitted */
-  background-color: var(--sklearn-color-fitted-level-0);
-}
-
-.sk-global input.sk-toggleable__control:checked~div.sk-toggleable__content {
-  /* Expand drop-down */
-  display: block;
-  width: 100%;
-  overflow: visible;
-}
-
-.sk-global input.sk-toggleable__control:checked~label.sk-toggleable__label-arrow:before {
-  content: "▾";
-}
-
-/* Pipeline/ColumnTransformer-specific style */
-
-.sk-global div.sk-label input.sk-toggleable__control:checked~label.sk-toggleable__label {
-  color: var(--sklearn-color-text);
-  background-color: var(--sklearn-color-unfitted-level-2);
-}
-
-.sk-global div.sk-label.fitted input.sk-toggleable__control:checked~label.sk-toggleable__label {
-  background-color: var(--sklearn-color-fitted-level-2);
-}
-
-/* Estimator-specific style */
-
-/* Colorize estimator box */
-.sk-global div.sk-estimator input.sk-toggleable__control:checked~label.sk-toggleable__label {
-  /* unfitted */
-  background-color: var(--sklearn-color-unfitted-level-2);
-}
-
-.sk-global div.sk-estimator.fitted input.sk-toggleable__control:checked~label.sk-toggleable__label {
-  /* fitted */
-  background-color: var(--sklearn-color-fitted-level-2);
-}
-
-.sk-global div.sk-label label.sk-toggleable__label,
-.sk-global div.sk-label label {
-  /* The background is the default theme color */
-  color: var(--sklearn-color-text-on-default-background);
-}
-
-/* On hover, darken the color of the background */
-.sk-global div.sk-label:hover label.sk-toggleable__label {
-  color: var(--sklearn-color-text);
-  background-color: var(--sklearn-color-unfitted-level-2);
-}
-
-/* Label box, darken color on hover, fitted */
-.sk-global div.sk-label.fitted:hover label.sk-toggleable__label.fitted {
-  color: var(--sklearn-color-text);
-  background-color: var(--sklearn-color-fitted-level-2);
-}
-
-/* Estimator label */
-
-.sk-global div.sk-label label {
-  font-family: monospace;
-  font-weight: bold;
-  line-height: 1.2em;
-}
-
-.sk-global div.sk-label-container {
-  text-align: center;
-}
-
-/* Estimator-specific */
-.sk-global div.sk-estimator {
-  font-family: monospace;
-  border: 1px dotted var(--sklearn-color-border-box);
-  border-radius: 0.25em;
-  box-sizing: border-box;
-  margin-bottom: 0.5em;
-  /* unfitted */
-  background-color: var(--sklearn-color-unfitted-level-0);
-}
-
-.sk-global div.sk-estimator.fitted {
-  /* fitted */
-  background-color: var(--sklearn-color-fitted-level-0);
-}
-
-/* on hover */
-.sk-global div.sk-estimator:hover {
-  /* unfitted */
-  background-color: var(--sklearn-color-unfitted-level-2);
-}
-
-.sk-global div.sk-estimator.fitted:hover {
-  /* fitted */
-  background-color: var(--sklearn-color-fitted-level-2);
-}
-
-/* Specification for estimator info (e.g. "i" and "?") */
-
-/* Common style for "i" and "?" */
-
-.sk-estimator-doc-link,
-a:link.sk-estimator-doc-link,
-a:visited.sk-estimator-doc-link {
-  float: right;
-  font-size: smaller;
-  line-height: 1em;
-  font-family: monospace;
-  background-color: var(--sklearn-color-unfitted-level-0);
-  border-radius: 1em;
-  height: 1em;
-  width: 1em;
-  text-decoration: none !important;
-  margin-left: 0.5em;
-  text-align: center;
-  /* unfitted */
-  border: var(--sklearn-color-unfitted-level-3) 1pt solid;
-  color: var(--sklearn-color-unfitted-level-3);
-}
-
-.sk-estimator-doc-link.fitted,
-a:link.sk-estimator-doc-link.fitted,
-a:visited.sk-estimator-doc-link.fitted {
-  /* fitted */
-  background-color: var(--sklearn-color-fitted-level-0);
-  border: var(--sklearn-color-fitted-level-3) 1pt solid;
-  color: var(--sklearn-color-fitted-level-3);
-}
-
-/* On hover */
-div.sk-estimator:hover .sk-estimator-doc-link:hover,
-.sk-estimator-doc-link:hover,
-div.sk-label-container:hover .sk-estimator-doc-link:hover,
-.sk-estimator-doc-link:hover {
-  /* unfitted */
-  background-color: var(--sklearn-color-unfitted-level-3);
-  border: var(--sklearn-color-fitted-level-0) 1pt solid;
-  color: var(--sklearn-color-unfitted-level-0);
-  text-decoration: none;
-}
-
-div.sk-estimator.fitted:hover .sk-estimator-doc-link.fitted:hover,
-.sk-estimator-doc-link.fitted:hover,
-div.sk-label-container:hover .sk-estimator-doc-link.fitted:hover,
-.sk-estimator-doc-link.fitted:hover {
-  /* fitted */
-  background-color: var(--sklearn-color-fitted-level-3);
-  border: var(--sklearn-color-fitted-level-0) 1pt solid;
-  color: var(--sklearn-color-fitted-level-0);
-  text-decoration: none;
-}
-
-/* Span, style for the box shown on hovering the info icon */
-.sk-estimator-doc-link span {
-  display: none;
-  z-index: 9999;
-  position: relative;
-  font-weight: normal;
-  right: .2ex;
-  padding: .5ex;
-  margin: .5ex;
-  width: min-content;
-  min-width: 20ex;
-  max-width: 50ex;
-  color: var(--sklearn-color-text);
-  box-shadow: 2pt 2pt 4pt #999;
-  /* unfitted */
-  background: var(--sklearn-color-unfitted-level-0);
-  border: .5pt solid var(--sklearn-color-unfitted-level-3);
-}
-
-.sk-estimator-doc-link.fitted span {
-  /* fitted */
-  background: var(--sklearn-color-fitted-level-0);
-  border: var(--sklearn-color-fitted-level-3);
-}
-
-.sk-estimator-doc-link:hover span {
-  display: block;
-}
-
-/* "?"-specific style due to the `<a>` HTML tag */
-
-.sk-global a.estimator_doc_link {
-  float: right;
-  font-size: 1rem;
-  line-height: 1em;
-  font-family: monospace;
-  background-color: var(--sklearn-color-unfitted-level-0);
-  border-radius: 1rem;
-  height: 1rem;
-  width: 1rem;
-  text-decoration: none;
-  /* unfitted */
-  color: var(--sklearn-color-unfitted-level-1);
-  border: var(--sklearn-color-unfitted-level-1) 1pt solid;
-}
-
-.sk-global a.estimator_doc_link.fitted {
-  /* fitted */
-  background-color: var(--sklearn-color-fitted-level-0);
-  border: var(--sklearn-color-fitted-level-1) 1pt solid;
-  color: var(--sklearn-color-fitted-level-1);
-}
-
-/* On hover */
-.sk-global a.estimator_doc_link:hover {
-  /* unfitted */
-  background-color: var(--sklearn-color-unfitted-level-3);
-  color: var(--sklearn-color-background);
-  text-decoration: none;
-}
-
-.sk-global a.estimator_doc_link.fitted:hover {
-  /* fitted */
-  background-color: var(--sklearn-color-fitted-level-3);
-}
-
-.sk-top-container.sk-global {
-  /* pydata-sphinx-theme hides overflow, so scrolling is disabled.
-   We need to set it to !important and add tabindex="0" in the HTML
-   to allow keyboard-only users to navigate the display. */
-  overflow-x: scroll !important;
-  max-width: 100%;
-}
-
-.estimator-table {
-    font-family: monospace;
-}
-
-.estimator-table summary {
-    padding: .5rem;
-    cursor: pointer;
-}
-
-.estimator-table summary::marker {
-    font-size: 0.7rem;
-}
-
-.estimator-table details[open] {
-    padding-left: 0.1rem;
-    padding-right: 0.1rem;
-    padding-bottom: 0.3rem;
-}
-
-.estimator-table .parameters-table {
-    margin-left: auto !important;
-    margin-right: auto !important;
-    margin-top: 0;
-}
-
-.estimator-table .parameters-table tr:nth-child(odd) {
-    background-color: #fff;
-}
-
-.estimator-table .parameters-table tr:nth-child(even) {
-    background-color: #f6f6f6;
-}
-
-.estimator-table .parameters-table tr:hover td {
-    background-color: #e0e0e0;
-}
-
-.estimator-table table :is(td, th) {
-    border: 1px solid rgba(106, 105, 104, 0.232);
-}
-
-/*
-    `table td`is set in notebook with right text-align.
-    We need to overwrite it.
-*/
-.estimator-table table td.param {
-    text-align: left;
-    position: relative;
-    padding: 0;
-}
-
-.user-set td {
-    color:rgb(255, 94, 0);
-    text-align: left !important;
-}
-
-.user-set td.value {
-    color:rgb(255, 94, 0);
-    background-color: transparent;
-}
-
-.default td, .estimator-table th {
-    color: black;
-    text-align: left !important;
-}
-
-.user-set td i,
-.default td i {
-    color: black;
-}
-
-td.fitted-att-type {
-    white-space: preserve nowrap;
-}
-
-/*
-    Styles for parameter documentation links
-    We need styling for visited so jupyter doesn't overwrite it
-*/
-a.param-doc-link,
-a.param-doc-link:link,
-a.param-doc-link:visited {
-    text-decoration: underline dashed;
-    text-underline-offset: .3em;
-    color: inherit;
-    display: block;
-    padding: .5em;
-}
-
-@supports(anchor-name: --doc-link) {
-    a.param-doc-link,
-    a.param-doc-link:link,
-    a.param-doc-link:visited {
-    anchor-name: --doc-link;
-    }
-}
-
-/* "hack" to make the entire area of the cell containing the link clickable */
-a.param-doc-link::before {
-    position: absolute;
-    content: "";
-    inset: 0;
-}
-
-.param-doc-description {
-    display: none;
-    position: absolute;
-    z-index: 9999;
-    left: 0;
-    padding: .5ex;
-    margin-left: 1.5em;
-    color: var(--sklearn-color-text);
-    box-shadow: .3em .3em .4em #999;
-    width: max-content;
-    text-align: left;
-    max-height: 10em;
-    overflow-y: auto;
-
-    /* unfitted */
-    background: var(--sklearn-color-unfitted-level-0);
-    border: thin solid var(--sklearn-color-unfitted-level-3);
-}
-
-@supports(position-area: center right) {
-    .param-doc-description {
-    position-area: center right;
-    position: fixed;
-    margin-left: 0;
-    }
-}
-
-/* Fitted state for parameter tooltips */
-.fitted .param-doc-description {
-    /* fitted */
-    background: var(--sklearn-color-fitted-level-0);
-    border: thin solid var(--sklearn-color-fitted-level-3);
-}
-
-.param-doc-link:hover .param-doc-description {
-    display: block;
-}
-
-.copy-paste-icon {
-    background-image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0NDggNTEyIj48IS0tIUZvbnQgQXdlc29tZSBGcmVlIDYuNy4yIGJ5IEBmb250YXdlc29tZSAtIGh0dHBzOi8vZm9udGF3ZXNvbWUuY29tIExpY2Vuc2UgLSBodHRwczovL2ZvbnRhd2Vzb21lLmNvbS9saWNlbnNlL2ZyZWUgQ29weXJpZ2h0IDIwMjUgRm9udGljb25zLCBJbmMuLS0+PHBhdGggZD0iTTIwOCAwTDMzMi4xIDBjMTIuNyAwIDI0LjkgNS4xIDMzLjkgMTQuMWw2Ny45IDY3LjljOSA5IDE0LjEgMjEuMiAxNC4xIDMzLjlMNDQ4IDMzNmMwIDI2LjUtMjEuNSA0OC00OCA0OGwtMTkyIDBjLTI2LjUgMC00OC0yMS41LTQ4LTQ4bDAtMjg4YzAtMjYuNSAyMS41LTQ4IDQ4LTQ4ek00OCAxMjhsODAgMCAwIDY0LTY0IDAgMCAyNTYgMTkyIDAgMC0zMiA2NCAwIDAgNDhjMCAyNi41LTIxLjUgNDgtNDggNDhMNDggNTEyYy0yNi41IDAtNDgtMjEuNS00OC00OEwwIDE3NmMwLTI2LjUgMjEuNS00OCA0OC00OHoiLz48L3N2Zz4=);
-    background-repeat: no-repeat;
-    background-size: 14px 14px;
-    background-position: 0;
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    cursor: pointer;
-}
-
-.features {
-  font-family: monospace;
-  cursor: pointer;
-  background-color: var(--sklearn-color-unfitted-level-0);
-  border: 1px dotted var(--sklearn-color-border-box);
-  border-radius: .20em;
-  margin-bottom: 0.5em;
-  font-size: inherit; /* Needed for jupyter */
-}
-
-.features.fitted {
-  background-color: var(--sklearn-color-fitted-level-0);
-}
-
-.features summary {
-  cursor: pointer;
-  display: flex;
-  margin-bottom: 0;
-  text-align: center;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5em;
-  padding: .25em;
-}
-
-.features details[open] > summary {
-  color: var(--sklearn-color-text);
-  background-color: var(--sklearn-color-unfitted-level-2);
-  border-radius: .20em 0 0 0;
-}
-
-.features.fitted details[open] > summary {
-  background-color: var(--sklearn-color-fitted-level-2);
-  border-radius: .20em 0 0 0;
-}
-
-.features details > summary .arrow::before {
-  content: "▸";
-  color: grey;
-}
-
-.features details[open] > summary .arrow::before {
-  content: "▾";
-}
-
-.features details:hover > summary {
-  margin: 0;
-  background-color: var(--sklearn-color-unfitted-level-2);
-}
-
-.features.fitted details:hover > summary {
-  margin: 0;
-  background-color: var(--sklearn-color-fitted-level-2);
-}
-
-.features .features-container {
-  max-width: 15em;
-  max-height: 10em;
-  overflow: auto;
-  scrollbar-width: thin;
-  padding: .25em 0.1rem;
-  background-color: var(--sklearn-color-unfitted-level-0);
-  border-radius: 0 0 .5em .5em;
-}
-
-.features.fitted .features-container {
-  background-color: var(--sklearn-color-fitted-level-0);
-}
-
-.features .image-container {
-  block-size: 1em;
-  inline-size: 1em;
-  padding: 0;
-  margin: 0%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.features .copy-paste-icon {
-  background-size: 1em 1em;
-  width: 1em;
-  height: 1em;
-  filter: grayscale(100%) opacity(60%);
-}
-
-.features .features-container table {
-  width: 100%;
-  margin: 0.01em;
-}
-
-.features .features-container table tr:nth-child(odd) {
-  background-color: #fff;
-}
-
-.features .features-container table tr:nth-child(even) {
-  background-color: #f6f6f6;
-}
-
-.features .features-container table tr:hover {
-  background-color: #e0e0e0;
-}
-
-.features .features-container table {
-  table-layout: inherit;
-}
-
-.features .features-container table td {
-  text-align: left;
-  padding: 0 0.5em;
-  border: 1px solid rgba(106, 105, 104, 0.232);
-  white-space: nowrap;
-  color: var(--sklearn-color-text);
-}
-
-.total_features {
-  display: flex;
-  justify-content: center;
-  margin-top: 0.5em;
-}
-</style><div id="sk-container-id-1" tabindex="0" class="sk-top-container sk-global"><div class="sk-text-repr-fallback"><pre>Pipeline(steps=[('simpleimputer', SimpleImputer(strategy='median')),
-                ('standardscaler', StandardScaler()),
-                ('poissonregressor',
-                 PoissonRegressor(alpha=0.1, max_iter=2000))])</pre><b>In a Jupyter environment, please rerun this cell to show the HTML representation or trust the notebook. <br>On GitHub, the HTML representation is unable to render, please try loading this page with nbviewer.org.</b></div><div class="sk-container" hidden=""><div class="sk-item sk-dashed-wrapped"><div class="sk-label-container"><div class="sk-label fitted sk-toggleable"><input class="sk-toggleable__control sk-hidden--visually sk-global" id="sk-estimator-id-1" type="checkbox"><label for="sk-estimator-id-1" class="sk-toggleable__label fitted sk-toggleable__label-arrow"><div><div>Pipeline</div></div><div><a class="sk-estimator-doc-link fitted" rel="noreferrer" target="_blank" href="https://scikit-learn.org/1.9/modules/generated/sklearn.pipeline.Pipeline.html">?<span>Documentation for Pipeline</span></a><span class="sk-estimator-doc-link fitted">i<span>Fitted</span></span></div></label><div class="sk-toggleable__content fitted" data-param-prefix="">
-        <div class="estimator-table">
-            <details>
-                <summary>Parameters</summary>
-                
-<table class="parameters-table caption-top table table-sm table-striped small">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
-<tbody>
-<tr class="user-set odd">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.pipeline.Pipeline.html#:~:text=steps,-list%20of%20tuples" class="param-doc-link" style="anchor-name: --doc-link-steps;" rel="noreferrer" target="_blank">steps <span class="param-doc-description" style="position-anchor: --doc-link-steps;"> steps: list of tuples<br>
-<br>
-List of (name of step, estimator) tuples that are to be chained in<br>
-sequential order. To be compatible with the scikit-learn API, all steps<br>
-must define `fit`. All non-last steps must also define `transform`. See<br>
-:ref:`Combining Estimators &lt;combining_estimators&gt;` for more details.</span></a></td>
-<td class="value">[('simpleimputer', ...), ('standardscaler', ...), ...]</td>
-</tr>
-<tr class="default even">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.pipeline.Pipeline.html#:~:text=transform_input,-list%20of%20str%2C%20default%3DNone" class="param-doc-link" style="anchor-name: --doc-link-transform_input;" rel="noreferrer" target="_blank">transform_input <span class="param-doc-description" style="position-anchor: --doc-link-transform_input;"> transform_input: list of str, default=None<br>
-<br>
-The names of the :term:`metadata` parameters that should be transformed by the<br>
-pipeline before passing it to the step consuming it.<br>
-<br>
-This enables transforming some input arguments to ``fit`` (other than ``X``)<br>
-to be transformed by the steps of the pipeline up to the step which requires<br>
-them. Requirement is defined via :ref:`metadata routing &lt;metadata_routing&gt;`.<br>
-For instance, this can be used to pass a validation set through the pipeline.<br>
-<br>
-You can only set this if metadata routing is enabled, which you<br>
-can enable using ``sklearn.set_config(enable_metadata_routing=True)``.<br>
-<br>
-.. versionadded:: 1.6</span></a></td>
-<td class="value">None</td>
-</tr>
-<tr class="default odd">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.pipeline.Pipeline.html#:~:text=memory,-str%20or%20object%20with%20the%20joblib.Memory%20interface%2C%20default%3DNone" class="param-doc-link" style="anchor-name: --doc-link-memory;" rel="noreferrer" target="_blank">memory <span class="param-doc-description" style="position-anchor: --doc-link-memory;"> memory: str or object with the joblib.Memory interface, default=None<br>
-<br>
-Used to cache the fitted transformers of the pipeline. The last step<br>
-will never be cached, even if it is a transformer. By default, no<br>
-caching is performed. If a string is given, it is the path to the<br>
-caching directory. Enabling caching triggers a clone of the transformers<br>
-before fitting. Therefore, the transformer instance given to the<br>
-pipeline cannot be inspected directly. Use the attribute ``named_steps``<br>
-or ``steps`` to inspect estimators within the pipeline. Caching the<br>
-transformers is advantageous when fitting is time consuming. See<br>
-:ref:`sphx_glr_auto_examples_neighbors_plot_caching_nearest_neighbors.py`<br>
-for an example on how to enable caching.</span></a></td>
-<td class="value">None</td>
-</tr>
-<tr class="default even">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.pipeline.Pipeline.html#:~:text=verbose,-bool%2C%20default%3DFalse" class="param-doc-link" style="anchor-name: --doc-link-verbose;" rel="noreferrer" target="_blank">verbose <span class="param-doc-description" style="position-anchor: --doc-link-verbose;"> verbose: bool, default=False<br>
-<br>
-If True, the time elapsed while fitting each step will be printed as it<br>
-is completed.</span></a></td>
-<td class="value">False</td>
-</tr>
-</tbody>
-</table>
-
-            </details>
-        </div>
-    
-        <div class="estimator-table">
-            <details>
-                <summary>Fitted attributes</summary>
-                
-<table class="parameters-table caption-top table table-sm table-striped small">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
-<tbody>
-<tr class="odd">
-<th data-quarto-table-cell-role="th">Name</th>
-<th data-quarto-table-cell-role="th">Type</th>
-<th data-quarto-table-cell-role="th">Value</th>
-</tr>
-<tr class="default even">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.pipeline.Pipeline.html#:~:text=feature_names_in_,-ndarray%20of%20shape%20%28n_features_in_%2C%29" class="param-doc-link" style="anchor-name: --doc-link-feature_names_in_;" rel="noreferrer" target="_blank">feature_names_in_ <span class="param-doc-description" style="position-anchor: --doc-link-feature_names_in_;"> feature_names_in_: ndarray of shape (`n_features_in_`,)<br>
-<br>
-Names of features seen during :term:`fit`. Only defined if the<br>
-underlying estimator exposes such an attribute when fit.<br>
-<br>
-.. versionadded:: 1.0</span></a></td>
-<td class="fitted-att-type">ndarray[object](8,)</td>
-<td>['elo_diff','neutral','home_points_form',...,'away_gf_form','home_ga_form', 'away_ga_form']</td>
-</tr>
-<tr class="default odd">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.pipeline.Pipeline.html#:~:text=n_features_in_,-int" class="param-doc-link" style="anchor-name: --doc-link-n_features_in_;" rel="noreferrer" target="_blank">n_features_in_ <span class="param-doc-description" style="position-anchor: --doc-link-n_features_in_;"> n_features_in_: int<br>
-<br>
-Number of features seen during :term:`fit`. Only defined if the<br>
-underlying first estimator in `steps` exposes such an attribute<br>
-when fit.<br>
-<br>
-.. versionadded:: 0.24</span></a></td>
-<td class="fitted-att-type">int</td>
-<td>8</td>
-</tr>
-</tbody>
-</table>
-
-            </details>
-        </div>
-    </div></div></div><div class="sk-serial"><div class="sk-item"><div class="sk-estimator fitted sk-toggleable"><input class="sk-toggleable__control sk-hidden--visually sk-global" id="sk-estimator-id-2" type="checkbox"><label for="sk-estimator-id-2" class="sk-toggleable__label fitted sk-toggleable__label-arrow"><div><div>SimpleImputer</div></div><div><a class="sk-estimator-doc-link fitted" rel="noreferrer" target="_blank" href="https://scikit-learn.org/1.9/modules/generated/sklearn.impute.SimpleImputer.html">?<span>Documentation for SimpleImputer</span></a></div></label><div class="sk-toggleable__content fitted" data-param-prefix="simpleimputer__">
-        <div class="estimator-table">
-            <details>
-                <summary>Parameters</summary>
-                
-<table class="parameters-table caption-top table table-sm table-striped small">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
-<tbody>
-<tr class="user-set odd">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.impute.SimpleImputer.html#:~:text=strategy,-str%20or%20Callable%2C%20default%3D%27mean%27" class="param-doc-link" style="anchor-name: --doc-link-strategy;" rel="noreferrer" target="_blank">strategy <span class="param-doc-description" style="position-anchor: --doc-link-strategy;"> strategy: str or Callable, default='mean'<br>
-<br>
-The imputation strategy.<br>
-<br>
-- If "mean", then replace missing values using the mean along<br>
-each column. Can only be used with numeric data.<br>
-- If "median", then replace missing values using the median along<br>
-each column. Can only be used with numeric data.<br>
-- If "most_frequent", then replace missing using the most frequent<br>
-value along each column. Can be used with strings or numeric data.<br>
-If there is more than one such value, only the smallest is returned.<br>
-- If "constant", then replace missing values with fill_value. Can be<br>
-used with strings or numeric data.<br>
-- If an instance of Callable, then replace missing values using the<br>
-scalar statistic returned by running the callable over a dense 1d<br>
-array containing non-missing values of each column.<br>
-<br>
-.. versionadded:: 0.20<br>
-strategy="constant" for fixed value imputation.<br>
-<br>
-.. versionadded:: 1.5<br>
-strategy=callable for custom value imputation.</span></a></td>
-<td class="value">'median'</td>
-</tr>
-<tr class="default even">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.impute.SimpleImputer.html#:~:text=missing_values,-int%2C%20float%2C%20str%2C%20np.nan%2C%20None%20or%20pandas.NA%2C%20default%3Dnp.nan" class="param-doc-link" style="anchor-name: --doc-link-missing_values;" rel="noreferrer" target="_blank">missing_values <span class="param-doc-description" style="position-anchor: --doc-link-missing_values;"> missing_values: int, float, str, np.nan, None or pandas.NA, default=np.nan<br>
-<br>
-The placeholder for the missing values. All occurrences of<br>
-`missing_values` will be imputed. For pandas' dataframes with<br>
-nullable integer dtypes with missing values, `missing_values`<br>
-can be set to either `np.nan` or `pd.NA`.</span></a></td>
-<td class="value">nan</td>
-</tr>
-<tr class="default odd">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.impute.SimpleImputer.html#:~:text=fill_value,-str%20or%20numerical%20value%2C%20default%3DNone" class="param-doc-link" style="anchor-name: --doc-link-fill_value;" rel="noreferrer" target="_blank">fill_value <span class="param-doc-description" style="position-anchor: --doc-link-fill_value;"> fill_value: str or numerical value, default=None<br>
-<br>
-When strategy == "constant", `fill_value` is used to replace all<br>
-occurrences of missing_values. For string or object data types,<br>
-`fill_value` must be a string.<br>
-If `None`, `fill_value` will be 0 when imputing numerical<br>
-data and "missing_value" for strings or object data types.</span></a></td>
-<td class="value">None</td>
-</tr>
-<tr class="default even">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.impute.SimpleImputer.html#:~:text=copy,-bool%2C%20default%3DTrue" class="param-doc-link" style="anchor-name: --doc-link-copy;" rel="noreferrer" target="_blank">copy <span class="param-doc-description" style="position-anchor: --doc-link-copy;"> copy: bool, default=True<br>
-<br>
-If True, a copy of X will be created. If False, imputation will<br>
-be done in-place whenever possible. Note that, in the following cases,<br>
-a new copy will always be made, even if `copy=False`:<br>
-<br>
-- If `X` is not an array of floating values;<br>
-- If `X` is encoded as a CSR matrix;<br>
-- If `add_indicator=True`.</span></a></td>
-<td class="value">True</td>
-</tr>
-<tr class="default odd">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.impute.SimpleImputer.html#:~:text=add_indicator,-bool%2C%20default%3DFalse" class="param-doc-link" style="anchor-name: --doc-link-add_indicator;" rel="noreferrer" target="_blank">add_indicator <span class="param-doc-description" style="position-anchor: --doc-link-add_indicator;"> add_indicator: bool, default=False<br>
-<br>
-If True, a :class:`MissingIndicator` transform will stack onto output<br>
-of the imputer's transform. This allows a predictive estimator<br>
-to account for missingness despite imputation. If a feature has no<br>
-missing values at fit/train time, the feature won't appear on<br>
-the missing indicator even if there are missing values at<br>
-transform/test time.</span></a></td>
-<td class="value">False</td>
-</tr>
-<tr class="default even">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.impute.SimpleImputer.html#:~:text=keep_empty_features,-bool%2C%20default%3DFalse" class="param-doc-link" style="anchor-name: --doc-link-keep_empty_features;" rel="noreferrer" target="_blank">keep_empty_features <span class="param-doc-description" style="position-anchor: --doc-link-keep_empty_features;"> keep_empty_features: bool, default=False<br>
-<br>
-If True, features that consist exclusively of missing values when<br>
-`fit` is called are returned in results when `transform` is called.<br>
-The imputed value is always `0` except when `strategy="constant"`<br>
-in which case `fill_value` will be used instead.<br>
-<br>
-.. versionadded:: 1.2</span></a></td>
-<td class="value">False</td>
-</tr>
-</tbody>
-</table>
-
-            </details>
-        </div>
-    
-        <div class="estimator-table">
-            <details>
-                <summary>Fitted attributes</summary>
-                
-<table class="parameters-table caption-top table table-sm table-striped small">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
-<tbody>
-<tr class="odd">
-<th data-quarto-table-cell-role="th">Name</th>
-<th data-quarto-table-cell-role="th">Type</th>
-<th data-quarto-table-cell-role="th">Value</th>
-</tr>
-<tr class="default even">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.impute.SimpleImputer.html#:~:text=feature_names_in_,-ndarray%20of%20shape%20%28n_features_in_%2C%29" class="param-doc-link" style="anchor-name: --doc-link-feature_names_in_;" rel="noreferrer" target="_blank">feature_names_in_ <span class="param-doc-description" style="position-anchor: --doc-link-feature_names_in_;"> feature_names_in_: ndarray of shape (`n_features_in_`,)<br>
-<br>
-Names of features seen during :term:`fit`. Defined only when `X`<br>
-has feature names that are all strings.<br>
-<br>
-.. versionadded:: 1.0</span></a></td>
-<td class="fitted-att-type">ndarray[object](8,)</td>
-<td>['elo_diff','neutral','home_points_form',...,'away_gf_form','home_ga_form', 'away_ga_form']</td>
-</tr>
-<tr class="default odd">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.impute.SimpleImputer.html#:~:text=indicator_,-%3Aclass%3A~sklearn.impute.MissingIndicator" class="param-doc-link" style="anchor-name: --doc-link-indicator_;" rel="noreferrer" target="_blank">indicator_ <span class="param-doc-description" style="position-anchor: --doc-link-indicator_;"> indicator_: :class:`~sklearn.impute.MissingIndicator`<br>
-<br>
-Indicator used to add binary indicators for missing values.<br>
-`None` if `add_indicator=False`.</span></a></td>
-<td class="fitted-att-type">NoneType</td>
-<td>None</td>
-</tr>
-<tr class="default even">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.impute.SimpleImputer.html#:~:text=n_features_in_,-int" class="param-doc-link" style="anchor-name: --doc-link-n_features_in_;" rel="noreferrer" target="_blank">n_features_in_ <span class="param-doc-description" style="position-anchor: --doc-link-n_features_in_;"> n_features_in_: int<br>
-<br>
-Number of features seen during :term:`fit`.<br>
-<br>
-.. versionadded:: 0.24</span></a></td>
-<td class="fitted-att-type">int</td>
-<td>8</td>
-</tr>
-<tr class="default odd">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.impute.SimpleImputer.html#:~:text=statistics_,-array%20of%20shape%20%28n_features%2C%29" class="param-doc-link" style="anchor-name: --doc-link-statistics_;" rel="noreferrer" target="_blank">statistics_ <span class="param-doc-description" style="position-anchor: --doc-link-statistics_;"> statistics_: array of shape (n_features,)<br>
-<br>
-The imputation fill value for each feature.<br>
-Computing statistics can result in `np.nan` values.<br>
-During :meth:`transform`, features corresponding to `np.nan`<br>
-statistics will be discarded.</span></a></td>
-<td class="fitted-att-type">ndarray[float64](8,)</td>
-<td>[12.01, 0. , 1.4 ,..., 1.2 , 1.2 , 1.2 ]</td>
-</tr>
-</tbody>
-</table>
-
-            </details>
-        </div>
-    </div></div></div>
-        <div class="features fitted">
-          <details>
-            <summary>
-              <div class="arrow"></div>
-              <div>8 features</div>
-              <div class="image-container" title="Copy all output features">
-                <i class="copy-paste-icon" onclick="
-                  event.stopPropagation();
-                  event.preventDefault();
-                  copyFeatureNamesToClipboard(this);
-                  ">
-                </i>
-              </div>
-            </summary>
-            <div class="features-container">
-                
-<table class="features-table caption-top table table-sm table-striped small">
-<tbody>
-<tr class="odd">
-<td>elo_diff</td>
-</tr>
-<tr class="even">
-<td>neutral</td>
-</tr>
-<tr class="odd">
-<td>home_points_form</td>
-</tr>
-<tr class="even">
-<td>away_points_form</td>
-</tr>
-<tr class="odd">
-<td>home_gf_form</td>
-</tr>
-<tr class="even">
-<td>away_gf_form</td>
-</tr>
-<tr class="odd">
-<td>home_ga_form</td>
-</tr>
-<tr class="even">
-<td>away_ga_form</td>
-</tr>
-</tbody>
-</table>
-
-            </div>
-          </details>
-        </div>
-    <div class="sk-item"><div class="sk-estimator fitted sk-toggleable"><input class="sk-toggleable__control sk-hidden--visually sk-global" id="sk-estimator-id-3" type="checkbox"><label for="sk-estimator-id-3" class="sk-toggleable__label fitted sk-toggleable__label-arrow"><div><div>StandardScaler</div></div><div><a class="sk-estimator-doc-link fitted" rel="noreferrer" target="_blank" href="https://scikit-learn.org/1.9/modules/generated/sklearn.preprocessing.StandardScaler.html">?<span>Documentation for StandardScaler</span></a></div></label><div class="sk-toggleable__content fitted" data-param-prefix="standardscaler__">
-        <div class="estimator-table">
-            <details>
-                <summary>Parameters</summary>
-                
-<table class="parameters-table caption-top table table-sm table-striped small">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
-<tbody>
-<tr class="default odd">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.preprocessing.StandardScaler.html#:~:text=copy,-bool%2C%20default%3DTrue" class="param-doc-link" style="anchor-name: --doc-link-copy;" rel="noreferrer" target="_blank">copy <span class="param-doc-description" style="position-anchor: --doc-link-copy;"> copy: bool, default=True<br>
-<br>
-If False, try to avoid a copy and do inplace scaling instead.<br>
-This is not guaranteed to always work inplace; e.g. if the data is<br>
-not a NumPy array or scipy.sparse CSR matrix, a copy may still be<br>
-returned.</span></a></td>
-<td class="value">True</td>
-</tr>
-<tr class="default even">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.preprocessing.StandardScaler.html#:~:text=with_mean,-bool%2C%20default%3DTrue" class="param-doc-link" style="anchor-name: --doc-link-with_mean;" rel="noreferrer" target="_blank">with_mean <span class="param-doc-description" style="position-anchor: --doc-link-with_mean;"> with_mean: bool, default=True<br>
-<br>
-If True, center the data before scaling.<br>
-This does not work (and will raise an exception) when attempted on<br>
-sparse matrices, because centering them entails building a dense<br>
-matrix which in common use cases is likely to be too large to fit in<br>
-memory.</span></a></td>
-<td class="value">True</td>
-</tr>
-<tr class="default odd">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.preprocessing.StandardScaler.html#:~:text=with_std,-bool%2C%20default%3DTrue" class="param-doc-link" style="anchor-name: --doc-link-with_std;" rel="noreferrer" target="_blank">with_std <span class="param-doc-description" style="position-anchor: --doc-link-with_std;"> with_std: bool, default=True<br>
-<br>
-If True, scale the data to unit variance (or equivalently,<br>
-unit standard deviation).</span></a></td>
-<td class="value">True</td>
-</tr>
-</tbody>
-</table>
-
-            </details>
-        </div>
-    
-        <div class="estimator-table">
-            <details>
-                <summary>Fitted attributes</summary>
-                
-<table class="parameters-table caption-top table table-sm table-striped small">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
-<tbody>
-<tr class="odd">
-<th data-quarto-table-cell-role="th">Name</th>
-<th data-quarto-table-cell-role="th">Type</th>
-<th data-quarto-table-cell-role="th">Value</th>
-</tr>
-<tr class="default even">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.preprocessing.StandardScaler.html#:~:text=mean_,-ndarray%20of%20shape%20%28n_features%2C%29%20or%20None" class="param-doc-link" style="anchor-name: --doc-link-mean_;" rel="noreferrer" target="_blank">mean_ <span class="param-doc-description" style="position-anchor: --doc-link-mean_;"> mean_: ndarray of shape (n_features,) or None<br>
-<br>
-The mean value for each feature in the training set.<br>
-Equal to ``None`` when ``with_mean=False`` and ``with_std=False``.</span></a></td>
-<td class="fitted-att-type">ndarray[float64](8,)</td>
-<td>[9.16,0.33,1.4 ,...,1.4 ,1.38,1.41]</td>
-</tr>
-<tr class="default odd">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.preprocessing.StandardScaler.html#:~:text=n_features_in_,-int" class="param-doc-link" style="anchor-name: --doc-link-n_features_in_;" rel="noreferrer" target="_blank">n_features_in_ <span class="param-doc-description" style="position-anchor: --doc-link-n_features_in_;"> n_features_in_: int<br>
-<br>
-Number of features seen during :term:`fit`.<br>
-<br>
-.. versionadded:: 0.24</span></a></td>
-<td class="fitted-att-type">int</td>
-<td>8</td>
-</tr>
-<tr class="default even">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.preprocessing.StandardScaler.html#:~:text=n_samples_seen_,-int%20or%20ndarray%20of%20shape%20%28n_features%2C%29" class="param-doc-link" style="anchor-name: --doc-link-n_samples_seen_;" rel="noreferrer" target="_blank">n_samples_seen_ <span class="param-doc-description" style="position-anchor: --doc-link-n_samples_seen_;"> n_samples_seen_: int or ndarray of shape (n_features,)<br>
-<br>
-The number of samples processed by the estimator for each feature.<br>
-If there are no missing samples, the ``n_samples_seen`` will be an<br>
-integer, otherwise it will be an array of dtype int. If<br>
-`sample_weights` are used it will be a float (if no missing data)<br>
-or an array of dtype float that sums the weights seen so far.<br>
-Will be reset on new calls to fit, but increments across<br>
-``partial_fit`` calls.</span></a></td>
-<td class="fitted-att-type">float64</td>
-<td>1.078e+04</td>
-</tr>
-<tr class="default odd">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.preprocessing.StandardScaler.html#:~:text=scale_,-ndarray%20of%20shape%20%28n_features%2C%29%20or%20None" class="param-doc-link" style="anchor-name: --doc-link-scale_;" rel="noreferrer" target="_blank">scale_ <span class="param-doc-description" style="position-anchor: --doc-link-scale_;"> scale_: ndarray of shape (n_features,) or None<br>
-<br>
-Per feature relative scaling of the data to achieve zero mean and unit<br>
-variance. Generally this is calculated using `np.sqrt(var_)`. If a<br>
-variance is zero, we can't achieve unit variance, and the data is left<br>
-as-is, giving a scaling factor of 1. `scale_` is equal to `None`<br>
-when `with_std=False`.<br>
-<br>
-.. versionadded:: 0.17<br>
-*scale_*</span></a></td>
-<td class="fitted-att-type">ndarray[float64](8,)</td>
-<td>[161.9 , 0.47, 0.75,..., 0.9 , 1. , 1.06]</td>
-</tr>
-<tr class="default even">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.preprocessing.StandardScaler.html#:~:text=var_,-ndarray%20of%20shape%20%28n_features%2C%29%20or%20None" class="param-doc-link" style="anchor-name: --doc-link-var_;" rel="noreferrer" target="_blank">var_ <span class="param-doc-description" style="position-anchor: --doc-link-var_;"> var_: ndarray of shape (n_features,) or None<br>
-<br>
-The variance for each feature in the training set. Used to compute<br>
-`scale_`. Equal to ``None`` when ``with_mean=False`` and<br>
-``with_std=False``.</span></a></td>
-<td class="fitted-att-type">ndarray[float64](8,)</td>
-<td>[26210. , 0.22, 0.56,..., 0.81, 1. , 1.13]</td>
-</tr>
-</tbody>
-</table>
-
-            </details>
-        </div>
-    </div></div></div>
-        <div class="features fitted">
-          <details>
-            <summary>
-              <div class="arrow"></div>
-              <div>8 features</div>
-              <div class="image-container" title="Copy all output features">
-                <i class="copy-paste-icon" onclick="
-                  event.stopPropagation();
-                  event.preventDefault();
-                  copyFeatureNamesToClipboard(this);
-                  ">
-                </i>
-              </div>
-            </summary>
-            <div class="features-container">
-                
-<table class="features-table caption-top table table-sm table-striped small">
-<tbody>
-<tr class="odd">
-<td>x0</td>
-</tr>
-<tr class="even">
-<td>x1</td>
-</tr>
-<tr class="odd">
-<td>x2</td>
-</tr>
-<tr class="even">
-<td>x3</td>
-</tr>
-<tr class="odd">
-<td>x4</td>
-</tr>
-<tr class="even">
-<td>x5</td>
-</tr>
-<tr class="odd">
-<td>x6</td>
-</tr>
-<tr class="even">
-<td>x7</td>
-</tr>
-</tbody>
-</table>
-
-            </div>
-          </details>
-        </div>
-    <div class="sk-item"><div class="sk-estimator fitted sk-toggleable"><input class="sk-toggleable__control sk-hidden--visually sk-global" id="sk-estimator-id-4" type="checkbox"><label for="sk-estimator-id-4" class="sk-toggleable__label fitted sk-toggleable__label-arrow"><div><div>PoissonRegressor</div></div><div><a class="sk-estimator-doc-link fitted" rel="noreferrer" target="_blank" href="https://scikit-learn.org/1.9/modules/generated/sklearn.linear_model.PoissonRegressor.html">?<span>Documentation for PoissonRegressor</span></a></div></label><div class="sk-toggleable__content fitted" data-param-prefix="poissonregressor__">
-        <div class="estimator-table">
-            <details>
-                <summary>Parameters</summary>
-                
-<table class="parameters-table caption-top table table-sm table-striped small">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
-<tbody>
-<tr class="user-set odd">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.linear_model.PoissonRegressor.html#:~:text=alpha,-float%2C%20default%3D1" class="param-doc-link" style="anchor-name: --doc-link-alpha;" rel="noreferrer" target="_blank">alpha <span class="param-doc-description" style="position-anchor: --doc-link-alpha;"> alpha: float, default=1<br>
-<br>
-Constant that multiplies the L2 penalty term and determines the<br>
-regularization strength. ``alpha = 0`` is equivalent to unpenalized<br>
-GLMs. In this case, the design matrix `X` must have full column rank<br>
-(no collinearities).<br>
-Values of `alpha` must be in the range `[0.0, inf)`.</span></a></td>
-<td class="value">0.1</td>
-</tr>
-<tr class="user-set even">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.linear_model.PoissonRegressor.html#:~:text=max_iter,-int%2C%20default%3D100" class="param-doc-link" style="anchor-name: --doc-link-max_iter;" rel="noreferrer" target="_blank">max_iter <span class="param-doc-description" style="position-anchor: --doc-link-max_iter;"> max_iter: int, default=100<br>
-<br>
-The maximal number of iterations for the solver.<br>
-Values must be in the range `[1, inf)`.</span></a></td>
-<td class="value">2000</td>
-</tr>
-<tr class="default odd">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.linear_model.PoissonRegressor.html#:~:text=fit_intercept,-bool%2C%20default%3DTrue" class="param-doc-link" style="anchor-name: --doc-link-fit_intercept;" rel="noreferrer" target="_blank">fit_intercept <span class="param-doc-description" style="position-anchor: --doc-link-fit_intercept;"> fit_intercept: bool, default=True<br>
-<br>
-Specifies if a constant (a.k.a. bias or intercept) should be<br>
-added to the linear predictor (`X @ coef + intercept`).</span></a></td>
-<td class="value">True</td>
-</tr>
-<tr class="default even">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.linear_model.PoissonRegressor.html#:~:text=solver,-%7B%27lbfgs%27%2C%20%27newton-cholesky%27%7D%2C%20default%3D%27lbfgs%27" class="param-doc-link" style="anchor-name: --doc-link-solver;" rel="noreferrer" target="_blank">solver <span class="param-doc-description" style="position-anchor: --doc-link-solver;"> solver: {'lbfgs', 'newton-cholesky'}, default='lbfgs'<br>
-<br>
-Algorithm to use in the optimization problem:<br>
-<br>
-'lbfgs'<br>
-Calls scipy's L-BFGS-B optimizer.<br>
-<br>
-'newton-cholesky'<br>
-Uses Newton-Raphson steps (in arbitrary precision arithmetic equivalent to<br>
-iterated reweighted least squares) with an inner Cholesky based solver.<br>
-This solver is a good choice for `n_samples` &gt;&gt; `n_features`, especially<br>
-with one-hot encoded categorical features with rare categories. Be aware<br>
-that the memory usage of this solver has a quadratic dependency on<br>
-`n_features` because it explicitly computes the Hessian matrix.<br>
-<br>
-.. versionadded:: 1.2</span></a></td>
-<td class="value">'lbfgs'</td>
-</tr>
-<tr class="default odd">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.linear_model.PoissonRegressor.html#:~:text=tol,-float%2C%20default%3D1e-4" class="param-doc-link" style="anchor-name: --doc-link-tol;" rel="noreferrer" target="_blank">tol <span class="param-doc-description" style="position-anchor: --doc-link-tol;"> tol: float, default=1e-4<br>
-<br>
-Stopping criterion. For the lbfgs solver,<br>
-the iteration will stop when ``max{|g_j|, j = 1, ..., d} &lt;= tol``<br>
-where ``g_j`` is the j-th component of the gradient (derivative) of<br>
-the objective function.<br>
-Values must be in the range `(0.0, inf)`.</span></a></td>
-<td class="value">0.0001</td>
-</tr>
-<tr class="default even">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.linear_model.PoissonRegressor.html#:~:text=warm_start,-bool%2C%20default%3DFalse" class="param-doc-link" style="anchor-name: --doc-link-warm_start;" rel="noreferrer" target="_blank">warm_start <span class="param-doc-description" style="position-anchor: --doc-link-warm_start;"> warm_start: bool, default=False<br>
-<br>
-If set to ``True``, reuse the solution of the previous call to ``fit``<br>
-as initialization for ``coef_`` and ``intercept_`` .</span></a></td>
-<td class="value">False</td>
-</tr>
-<tr class="default odd">
-<td><em></em></td>
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.linear_model.PoissonRegressor.html#:~:text=verbose,-int%2C%20default%3D0" class="param-doc-link" style="anchor-name: --doc-link-verbose;" rel="noreferrer" target="_blank">verbose <span class="param-doc-description" style="position-anchor: --doc-link-verbose;"> verbose: int, default=0<br>
-<br>
-For the lbfgs solver set verbose to any positive number for verbosity.<br>
-Values must be in the range `[0, inf)`.</span></a></td>
-<td class="value">0</td>
-</tr>
-</tbody>
-</table>
-
-            </details>
-        </div>
-    
-        <div class="estimator-table">
-            <details>
-                <summary>Fitted attributes</summary>
-                
-<table class="parameters-table caption-top table table-sm table-striped small">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
-<tbody>
-<tr class="odd">
-<th data-quarto-table-cell-role="th">Name</th>
-<th data-quarto-table-cell-role="th">Type</th>
-<th data-quarto-table-cell-role="th">Value</th>
-</tr>
-<tr class="default even">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.linear_model.PoissonRegressor.html#:~:text=coef_,-array%20of%20shape%20%28n_features%2C%29" class="param-doc-link" style="anchor-name: --doc-link-coef_;" rel="noreferrer" target="_blank">coef_ <span class="param-doc-description" style="position-anchor: --doc-link-coef_;"> coef_: array of shape (n_features,)<br>
-<br>
-Estimated coefficients for the linear predictor (`X @ coef_ +<br>
-intercept_`) in the GLM.</span></a></td>
-<td class="fitted-att-type">ndarray[float64](8,)</td>
-<td>[-0.36, 0.09, 0.01,..., 0.08, 0.19,-0.03]</td>
-</tr>
-<tr class="default odd">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.linear_model.PoissonRegressor.html#:~:text=intercept_,-float" class="param-doc-link" style="anchor-name: --doc-link-intercept_;" rel="noreferrer" target="_blank">intercept_ <span class="param-doc-description" style="position-anchor: --doc-link-intercept_;"> intercept_: float<br>
-<br>
-Intercept (a.k.a. bias) added to linear predictor.</span></a></td>
-<td class="fitted-att-type">float64</td>
-<td>0.03714</td>
-</tr>
-<tr class="default even">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.linear_model.PoissonRegressor.html#:~:text=n_features_in_,-int" class="param-doc-link" style="anchor-name: --doc-link-n_features_in_;" rel="noreferrer" target="_blank">n_features_in_ <span class="param-doc-description" style="position-anchor: --doc-link-n_features_in_;"> n_features_in_: int<br>
-<br>
-Number of features seen during :term:`fit`.<br>
-<br>
-.. versionadded:: 0.24</span></a></td>
-<td class="fitted-att-type">int</td>
-<td>8</td>
-</tr>
-<tr class="default odd">
-<td class="param"><a href="https://scikit-learn.org/1.9/modules/generated/sklearn.linear_model.PoissonRegressor.html#:~:text=n_iter_,-int" class="param-doc-link" style="anchor-name: --doc-link-n_iter_;" rel="noreferrer" target="_blank">n_iter_ <span class="param-doc-description" style="position-anchor: --doc-link-n_iter_;"> n_iter_: int<br>
-<br>
-Actual number of iterations used in the solver.</span></a></td>
-<td class="fitted-att-type">int</td>
-<td>10</td>
-</tr>
-</tbody>
-</table>
-
-            </details>
-        </div>
-    </div></div></div></div></div></div></div><script>/*  Authors: The scikit-learn developers
- SPDX-License-Identifier: BSD-3-Clause
-*/
-
-function copyToClipboard(text, element) {
-    // Get the parameter prefix from the closest toggleable content
-    const toggleableContent = element.closest('.sk-toggleable__content');
-    const paramPrefix = toggleableContent ? toggleableContent.dataset.paramPrefix : '';
-    const fullParamName = paramPrefix ? `${paramPrefix}${text}` : text;
-
-    const originalStyle = element.style;
-    const computedStyle = window.getComputedStyle(element);
-    const originalWidth = computedStyle.width;
-    const originalHTML = element.innerHTML.replace('Copied!', '');
-
-    navigator.clipboard.writeText(fullParamName)
-        .then(() => {
-            element.style.width = originalWidth;
-            element.style.color = 'green';
-            element.innerHTML = "Copied!";
-
-            setTimeout(() => {
-                element.innerHTML = originalHTML;
-                element.style = originalStyle;
-            }, 2000);
-        })
-        .catch(err => {
-            console.error('Failed to copy:', err);
-            element.style.color = 'red';
-            element.innerHTML = "Failed!";
-            setTimeout(() => {
-                element.innerHTML = originalHTML;
-                element.style = originalStyle;
-            }, 2000);
-        });
-    return false;
-}
-
-document.querySelectorAll('.copy-paste-icon').forEach(function(element) {
-    const toggleableContent = element.closest('.sk-toggleable__content');
-    const paramPrefix = toggleableContent ? toggleableContent.dataset.paramPrefix : '';
-
-    const parent = element.parentElement;
-    if (!parent || !parent.nextElementSibling) {
-        console.warn('Expected copy-paste icon is missing from the DOM structure');
-        return;
-    }
-
-    const paramName = element.parentElement.nextElementSibling
-        .textContent.trim().split(' ')[0];
-    const fullParamName = paramPrefix ? `${paramPrefix}${paramName}` : paramName;
-
-    element.setAttribute('title', fullParamName);
-});
-
-/**
- * Copy the list of feature names formatted as a Python list.
- *
- * @param {HTMLElement} element - The copy button inside a `.features` block; its siblings
- *   contain a `details` element and a table containing feature named.
- * @returns {boolean} Always returns `false` so callers can prevent the default click behavior.
- */
-function copyFeatureNamesToClipboard(element) {
-    var detailsElem = element.closest('.features').querySelector('details');
-    var wasOpen = detailsElem.open;
-    detailsElem.open = true;
-    var content = element.closest('.features').querySelector('tbody')
-                  .innerText.trim();
-    if (!wasOpen) detailsElem.open = false;
-    const rows = content.split('\n').map(row => `    "${row}"`);
-    const formattedText = `[\n${rows.join(',\n')},\n]`;
-    const originalHTML = element.innerHTML.replace('âœ”', '');
-    const originalStyle = element.style;
-    const copyMark = document.createElement('span');
-    copyMark.innerHTML = 'âœ”';
-    copyMark.style.color = 'blue';
-    copyMark.style.fontSize = '1em';
-
-    navigator.clipboard.writeText(formattedText)
-        .then(() => {
-            element.style.display = 'none';
-            element.parentElement.appendChild(copyMark);
-
-            setTimeout(() => {
-                copyMark.remove();
-                element.innerHTML = originalHTML;
-                element.style = originalStyle;
-            }, 1000);
-        })
-        .catch(err => {
-            console.error('Failed to copy:', err);
-            element.style.color = 'orange';
-            element.innerHTML = "Failed!";
-            setTimeout(() => {
-                element.innerHTML = originalHTML;
-                element.style = originalStyle;
-            }, 1000);
-        });
-    return false;
-}
-/**
- * Adapted from Skrub
- * https://github.com/skrub-data/skrub/blob/403466d1d5d4dc76a7ef569b3f8228db59a31dc3/skrub/_reporting/_data/templates/report.js#L789
- * @returns "light" or "dark"
- */
-function detectTheme(element) {
-    const body = document.querySelector('body');
-
-    // Check VSCode theme
-    const themeKindAttr = body.getAttribute('data-vscode-theme-kind');
-    const themeNameAttr = body.getAttribute('data-vscode-theme-name');
-
-    if (themeKindAttr && themeNameAttr) {
-        const themeKind = themeKindAttr.toLowerCase();
-        const themeName = themeNameAttr.toLowerCase();
-
-        if (themeKind.includes("dark") || themeName.includes("dark")) {
-            return "dark";
-        }
-        if (themeKind.includes("light") || themeName.includes("light")) {
-            return "light";
-        }
-    }
-
-    // Check Jupyter theme
-    if (body.getAttribute('data-jp-theme-light') === 'false') {
-        return 'dark';
-    } else if (body.getAttribute('data-jp-theme-light') === 'true') {
-        return 'light';
-    }
-
-    // Guess based on a parent element's color
-    const color = window.getComputedStyle(element.parentNode, null).getPropertyValue('color');
-    const match = color.match(/^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)\s*$/i);
-    if (match) {
-        const [r, g, b] = [
-            parseFloat(match[1]),
-            parseFloat(match[2]),
-            parseFloat(match[3])
-        ];
-
-        // https://en.wikipedia.org/wiki/HSL_and_HSV#Lightness
-        const luma = 0.299 * r + 0.587 * g + 0.114 * b;
-
-        if (luma > 180) {
-            // If the text is very bright we have a dark theme
-            return 'dark';
-        }
-        if (luma < 75) {
-            // If the text is very dark we have a light theme
-            return 'light';
-        }
-        // Otherwise fall back to the next heuristic.
-    }
-
-    // Fallback to system preference
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-
-function forceTheme(elementId) {
-    const estimatorElement = document.querySelector(`#${elementId}`);
-    if (estimatorElement === null) {
-        console.error(`Element with id ${elementId} not found.`);
-    } else {
-        const theme = detectTheme(estimatorElement);
-        estimatorElement.classList.add(theme);
-    }
-}
-
-forceTheme('sk-container-id-1');</script>
+<div class="cell-output cell-output-stderr">
+<pre><code>C:\Users\khanh\AppData\Roaming\Python\Python314\site-packages\joblib\externals\loky\backend\context.py:131: UserWarning: Could not find the number of physical cores for the following reason:
+found 0 physical cores &lt; 1
+Returning the number of logical cores instead. You can silence this warning by setting LOKY_MAX_CPU_COUNT to the number of cores you want to use.
+  warnings.warn(
+  File "C:\Users\khanh\AppData\Roaming\Python\Python314\site-packages\joblib\externals\loky\backend\context.py", line 255, in _count_physical_cores
+    raise ValueError(f"found {cpu_count_physical} physical cores &lt; 1")</code></pre>
 </div>
 </div>
-<div id="wc-schedule" class="cell" data-execution_count="171">
+<div id="wc-schedule" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-06-29T06:34:48.527080Z&quot;,&quot;iopub.status.busy&quot;:&quot;2026-06-29T06:34:48.526701Z&quot;,&quot;iopub.status.idle&quot;:&quot;2026-06-29T06:34:48.542200Z&quot;,&quot;shell.execute_reply&quot;:&quot;2026-06-29T06:34:48.540992Z&quot;}}" data-execution_count="8">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>wc_played_all <span class="op">=</span> df_recent[</span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    df_recent[<span class="st">"tournament"</span>].eq(<span class="st">"FIFA World Cup"</span>)</span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">&amp;</span> df_recent[<span class="st">"date"</span>].ge(<span class="st">"2026-01-01"</span>)</span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>].copy()</span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>wc_upcoming_all <span class="op">=</span> upcoming_matches[</span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>    upcoming_matches[<span class="st">"tournament"</span>].eq(<span class="st">"FIFA World Cup"</span>)</span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>].copy()</span>
-<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a><span class="co"># 72 trận đầu tiên của World Cup 2026 là vòng bảng.</span></span>
-<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>wc_group_matches <span class="op">=</span> (</span>
-<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>    pd.concat([wc_played_all, wc_upcoming_all], ignore_index<span class="op">=</span><span class="va">True</span>, sort<span class="op">=</span><span class="va">False</span>)</span>
-<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>    .sort_values([<span class="st">"date"</span>, <span class="st">"home_team"</span>, <span class="st">"away_team"</span>])</span>
-<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>    .head(<span class="dv">72</span>)</span>
-<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>    .reset_index(drop<span class="op">=</span><span class="va">True</span>)</span>
-<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>wc2026_played <span class="op">=</span> wc_group_matches.dropna(subset<span class="op">=</span>[<span class="st">"home_score"</span>, <span class="st">"away_score"</span>]).copy()</span>
-<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>wc2026_upcoming <span class="op">=</span> wc_group_matches[</span>
-<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>    wc_group_matches[[<span class="st">"home_score"</span>, <span class="st">"away_score"</span>]].isna().<span class="bu">any</span>(axis<span class="op">=</span><span class="dv">1</span>)</span>
-<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>].copy()</span>
-<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">len</span>(wc_group_matches) <span class="op">==</span> <span class="dv">72</span></span>
-<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> wc2026_upcoming[<span class="st">"tournament"</span>].eq(<span class="st">"FIFA World Cup"</span>).<span class="bu">all</span>()</span>
-<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Đã đá:"</span>, <span class="bu">len</span>(wc2026_played), <span class="st">"| Chưa đá:"</span>, <span class="bu">len</span>(wc2026_upcoming))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>wc_played_all <span class="op">=</span> df_recent[</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    df_recent[<span class="st">"tournament"</span>].eq(<span class="st">"FIFA World Cup"</span>)</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">&amp;</span> df_recent[<span class="st">"date"</span>].ge(<span class="st">"2026-01-01"</span>)</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>].copy()</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>wc_upcoming_all <span class="op">=</span> upcoming_matches[</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>    upcoming_matches[<span class="st">"tournament"</span>].eq(<span class="st">"FIFA World Cup"</span>)</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>].copy()</span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="co"># 72 trận đầu tiên của World Cup 2026 là vòng bảng.</span></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>wc_group_matches <span class="op">=</span> (</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>    pd.concat([wc_played_all, wc_upcoming_all], ignore_index<span class="op">=</span><span class="va">True</span>, sort<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a>    .sort_values([<span class="st">"date"</span>, <span class="st">"home_team"</span>, <span class="st">"away_team"</span>])</span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>    .head(<span class="dv">72</span>)</span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>    .reset_index(drop<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a>wc2026_played <span class="op">=</span> wc_group_matches.dropna(subset<span class="op">=</span>[<span class="st">"home_score"</span>, <span class="st">"away_score"</span>]).copy()</span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a>wc2026_upcoming <span class="op">=</span> wc_group_matches[</span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>    wc_group_matches[[<span class="st">"home_score"</span>, <span class="st">"away_score"</span>]].isna().<span class="bu">any</span>(axis<span class="op">=</span><span class="dv">1</span>)</span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a>].copy()</span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">len</span>(wc_group_matches) <span class="op">==</span> <span class="dv">72</span></span>
+<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> wc2026_upcoming[<span class="st">"tournament"</span>].eq(<span class="st">"FIFA World Cup"</span>).<span class="bu">all</span>()</span>
+<span id="cb13-23"><a href="#cb13-23" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Đã đá:"</span>, <span class="bu">len</span>(wc2026_played), <span class="st">"| Chưa đá:"</span>, <span class="bu">len</span>(wc2026_upcoming))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>Đã đá: 40 | Chưa đá: 32</code></pre>
 </div>
 </div>
-<div id="discover-groups" class="cell" data-execution_count="172">
+<div id="discover-groups" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-06-29T06:34:48.544588Z&quot;,&quot;iopub.status.busy&quot;:&quot;2026-06-29T06:34:48.544221Z&quot;,&quot;iopub.status.idle&quot;:&quot;2026-06-29T06:34:48.552919Z&quot;,&quot;shell.execute_reply&quot;:&quot;2026-06-29T06:34:48.551875Z&quot;}}" data-execution_count="9">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>opponents <span class="op">=</span> defaultdict(<span class="bu">set</span>)</span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> row <span class="kw">in</span> wc_group_matches.itertuples(index<span class="op">=</span><span class="va">False</span>):</span>
-<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    opponents[row.home_team].add(row.away_team)</span>
-<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    opponents[row.away_team].add(row.home_team)</span>
-<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>unvisited <span class="op">=</span> <span class="bu">set</span>(opponents)</span>
-<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>groups <span class="op">=</span> []</span>
-<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="cf">while</span> unvisited:</span>
-<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>    start <span class="op">=</span> unvisited.pop()</span>
-<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>    component <span class="op">=</span> {start}</span>
-<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>    stack <span class="op">=</span> [start]</span>
-<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">while</span> stack:</span>
-<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>        team <span class="op">=</span> stack.pop()</span>
-<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>        new_teams <span class="op">=</span> opponents[team] <span class="op">-</span> component</span>
-<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>        component.update(new_teams)</span>
-<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a>        unvisited.difference_update(new_teams)</span>
-<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a>        stack.extend(new_teams)</span>
-<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>    groups.append(<span class="bu">tuple</span>(<span class="bu">sorted</span>(component)))</span>
-<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a>groups <span class="op">=</span> <span class="bu">sorted</span>(groups, key<span class="op">=</span><span class="kw">lambda</span> group: group[<span class="dv">0</span>])</span>
-<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">len</span>(groups) <span class="op">==</span> <span class="dv">12</span> <span class="kw">and</span> <span class="bu">all</span>(<span class="bu">len</span>(group) <span class="op">==</span> <span class="dv">4</span> <span class="cf">for</span> group <span class="kw">in</span> groups)</span>
-<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> number, group <span class="kw">in</span> <span class="bu">enumerate</span>(groups, start<span class="op">=</span><span class="dv">1</span>):</span>
-<span id="cb13-23"><a href="#cb13-23" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(number, group)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>opponents <span class="op">=</span> defaultdict(<span class="bu">set</span>)</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> row <span class="kw">in</span> wc_group_matches.itertuples(index<span class="op">=</span><span class="va">False</span>):</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>    opponents[row.home_team].add(row.away_team)</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>    opponents[row.away_team].add(row.home_team)</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>unvisited <span class="op">=</span> <span class="bu">set</span>(opponents)</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>groups <span class="op">=</span> []</span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="cf">while</span> unvisited:</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>    start <span class="op">=</span> unvisited.pop()</span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>    component <span class="op">=</span> {start}</span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>    stack <span class="op">=</span> [start]</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">while</span> stack:</span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>        team <span class="op">=</span> stack.pop()</span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>        new_teams <span class="op">=</span> opponents[team] <span class="op">-</span> component</span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>        component.update(new_teams)</span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a>        unvisited.difference_update(new_teams)</span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a>        stack.extend(new_teams)</span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a>    groups.append(<span class="bu">tuple</span>(<span class="bu">sorted</span>(component)))</span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a>groups <span class="op">=</span> <span class="bu">sorted</span>(groups, key<span class="op">=</span><span class="kw">lambda</span> group: group[<span class="dv">0</span>])</span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">len</span>(groups) <span class="op">==</span> <span class="dv">12</span> <span class="kw">and</span> <span class="bu">all</span>(<span class="bu">len</span>(group) <span class="op">==</span> <span class="dv">4</span> <span class="cf">for</span> group <span class="kw">in</span> groups)</span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> number, group <span class="kw">in</span> <span class="bu">enumerate</span>(groups, start<span class="op">=</span><span class="dv">1</span>):</span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(number, group)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>1 ('Algeria', 'Argentina', 'Austria', 'Jordan')
@@ -2075,35 +676,32 @@ forceTheme('sk-container-id-1');</script>
 12 ('Japan', 'Netherlands', 'Sweden', 'Tunisia')</code></pre>
 </div>
 </div>
-<div id="future-rates" class="cell" data-execution_count="173">
+<div id="future-rates" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-06-29T06:34:48.554863Z&quot;,&quot;iopub.status.busy&quot;:&quot;2026-06-29T06:34:48.554550Z&quot;,&quot;iopub.status.idle&quot;:&quot;2026-06-29T06:34:48.687502Z&quot;,&quot;shell.execute_reply&quot;:&quot;2026-06-29T06:34:48.686834Z&quot;}}" data-execution_count="10">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> predict_goal_rates(row):</span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>    features <span class="op">=</span> pd.DataFrame([{feature: row[feature] <span class="cf">for</span> feature <span class="kw">in</span> GOAL_FEATURES}])</span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>    home_rate <span class="op">=</span> <span class="bu">float</span>(home_goal_model.predict(features)[<span class="dv">0</span>])</span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>    away_rate <span class="op">=</span> <span class="bu">float</span>(away_goal_model.predict(features)[<span class="dv">0</span>])</span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> np.clip(home_rate, <span class="fl">0.05</span>, <span class="fl">7.0</span>), np.clip(away_rate, <span class="fl">0.05</span>, <span class="fl">7.0</span>)</span>
-<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>goal_rates <span class="op">=</span> wc2026_upcoming.<span class="bu">apply</span>(predict_goal_rates, axis<span class="op">=</span><span class="dv">1</span>, result_type<span class="op">=</span><span class="st">"expand"</span>)</span>
-<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>goal_rates.columns <span class="op">=</span> [<span class="st">"home_goal_rate"</span>, <span class="st">"away_goal_rate"</span>]</span>
-<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>wc2026_upcoming <span class="op">=</span> pd.concat(</span>
-<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>    [wc2026_upcoming.reset_index(drop<span class="op">=</span><span class="va">True</span>), goal_rates.reset_index(drop<span class="op">=</span><span class="va">True</span>)],</span>
-<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>    axis<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>probability_rows <span class="op">=</span> []</span>
-<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> _, row <span class="kw">in</span> wc2026_upcoming.iterrows():</span>
-<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a>    probability_rows.append({</span>
-<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a>        <span class="st">"date"</span>: row[<span class="st">"date"</span>],</span>
-<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>        <span class="st">"home_team"</span>: row[<span class="st">"home_team"</span>],</span>
-<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a>        <span class="st">"away_team"</span>: row[<span class="st">"away_team"</span>],</span>
-<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a>        <span class="op">**</span>predict_outcome_probabilities(final_model, row),</span>
-<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a>match_probabilities <span class="op">=</span> pd.DataFrame(probability_rows)</span>
-<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a>match_probabilities.head()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> predict_goal_rates(row):</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> model_predict_goal_rates(home_goal_model, away_goal_model, row, GOAL_FEATURES)</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>goal_rates <span class="op">=</span> wc2026_upcoming.<span class="bu">apply</span>(predict_goal_rates, axis<span class="op">=</span><span class="dv">1</span>, result_type<span class="op">=</span><span class="st">"expand"</span>)</span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>goal_rates.columns <span class="op">=</span> [<span class="st">"home_goal_rate"</span>, <span class="st">"away_goal_rate"</span>]</span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>wc2026_upcoming <span class="op">=</span> pd.concat(</span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>    [wc2026_upcoming.reset_index(drop<span class="op">=</span><span class="va">True</span>), goal_rates.reset_index(drop<span class="op">=</span><span class="va">True</span>)],</span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a>    axis<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a>probability_rows <span class="op">=</span> []</span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> _, row <span class="kw">in</span> wc2026_upcoming.iterrows():</span>
+<span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a>    probability_rows.append({</span>
+<span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a>        <span class="st">"date"</span>: row[<span class="st">"date"</span>],</span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a>        <span class="st">"home_team"</span>: row[<span class="st">"home_team"</span>],</span>
+<span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a>        <span class="st">"away_team"</span>: row[<span class="st">"away_team"</span>],</span>
+<span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a>        <span class="op">**</span>predict_outcome_probabilities(final_model, row),</span>
+<span id="cb17-19"><a href="#cb17-19" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb17-20"><a href="#cb17-20" aria-hidden="true" tabindex="-1"></a>match_probabilities <span class="op">=</span> pd.DataFrame(probability_rows)</span>
+<span id="cb17-21"><a href="#cb17-21" aria-hidden="true" tabindex="-1"></a>match_probabilities.head()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
-<div class="cell-output cell-output-display" data-execution_count="173">
+<div class="cell-output cell-output-display" data-execution_count="10">
 <div>
 
 
@@ -2175,139 +773,89 @@ forceTheme('sk-container-id-1');</script>
 <section id="xếp-hạng-và-tie-break" class="level2">
 <h2 class="anchored" data-anchor-id="xếp-hạng-và-tie-break">Xếp hạng và tie-break</h2>
 <p>Thứ tự được xét theo điểm, hiệu số và bàn thắng; nếu vẫn bằng nhau thì xét thành tích đối đầu giữa các đội đang hòa. Dữ liệu không có điểm fair-play, nên trường hợp vẫn hòa tuyệt đối được xử lý bằng bốc thăm có seed thay vì phụ thuộc vào thứ tự ngẫu nhiên của <code>set</code>.</p>
-<div id="ranking-functions" class="cell" data-execution_count="174">
+<div id="ranking-functions" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-06-29T06:34:48.689217Z&quot;,&quot;iopub.status.busy&quot;:&quot;2026-06-29T06:34:48.689028Z&quot;,&quot;iopub.status.idle&quot;:&quot;2026-06-29T06:34:48.692347Z&quot;,&quot;shell.execute_reply&quot;:&quot;2026-06-29T06:34:48.691483Z&quot;}}" data-execution_count="11">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> calculate_table(teams, results):</span>
-<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>    table <span class="op">=</span> {team: {<span class="st">"team"</span>: team, <span class="st">"points"</span>: <span class="dv">0</span>, <span class="st">"gf"</span>: <span class="dv">0</span>, <span class="st">"ga"</span>: <span class="dv">0</span>} <span class="cf">for</span> team <span class="kw">in</span> teams}</span>
-<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> home, away, home_goals, away_goals <span class="kw">in</span> results:</span>
-<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> home <span class="kw">not</span> <span class="kw">in</span> table <span class="kw">or</span> away <span class="kw">not</span> <span class="kw">in</span> table:</span>
-<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>            <span class="cf">continue</span></span>
-<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>        table[home][<span class="st">"gf"</span>] <span class="op">+=</span> home_goals</span>
-<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>        table[home][<span class="st">"ga"</span>] <span class="op">+=</span> away_goals</span>
-<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>        table[away][<span class="st">"gf"</span>] <span class="op">+=</span> away_goals</span>
-<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>        table[away][<span class="st">"ga"</span>] <span class="op">+=</span> home_goals</span>
-<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> home_goals <span class="op">&gt;</span> away_goals:</span>
-<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>            table[home][<span class="st">"points"</span>] <span class="op">+=</span> <span class="dv">3</span></span>
-<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a>        <span class="cf">elif</span> home_goals <span class="op">&lt;</span> away_goals:</span>
-<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>            table[away][<span class="st">"points"</span>] <span class="op">+=</span> <span class="dv">3</span></span>
-<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span>:</span>
-<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a>            table[home][<span class="st">"points"</span>] <span class="op">+=</span> <span class="dv">1</span></span>
-<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a>            table[away][<span class="st">"points"</span>] <span class="op">+=</span> <span class="dv">1</span></span>
-<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> row <span class="kw">in</span> table.values():</span>
-<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a>        row[<span class="st">"gd"</span>] <span class="op">=</span> row[<span class="st">"gf"</span>] <span class="op">-</span> row[<span class="st">"ga"</span>]</span>
-<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> table</span>
-<span id="cb16-21"><a href="#cb16-21" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-22"><a href="#cb16-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-23"><a href="#cb16-23" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> rank_group(teams, results, rng):</span>
-<span id="cb16-24"><a href="#cb16-24" aria-hidden="true" tabindex="-1"></a>    overall <span class="op">=</span> calculate_table(teams, results)</span>
-<span id="cb16-25"><a href="#cb16-25" aria-hidden="true" tabindex="-1"></a>    rows <span class="op">=</span> <span class="bu">sorted</span>(</span>
-<span id="cb16-26"><a href="#cb16-26" aria-hidden="true" tabindex="-1"></a>        overall.values(),</span>
-<span id="cb16-27"><a href="#cb16-27" aria-hidden="true" tabindex="-1"></a>        key<span class="op">=</span><span class="kw">lambda</span> row: (row[<span class="st">"points"</span>], row[<span class="st">"gd"</span>], row[<span class="st">"gf"</span>]),</span>
-<span id="cb16-28"><a href="#cb16-28" aria-hidden="true" tabindex="-1"></a>        reverse<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb16-29"><a href="#cb16-29" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb16-30"><a href="#cb16-30" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-31"><a href="#cb16-31" aria-hidden="true" tabindex="-1"></a>    ranked <span class="op">=</span> []</span>
-<span id="cb16-32"><a href="#cb16-32" aria-hidden="true" tabindex="-1"></a>    key_function <span class="op">=</span> <span class="kw">lambda</span> row: (row[<span class="st">"points"</span>], row[<span class="st">"gd"</span>], row[<span class="st">"gf"</span>])</span>
-<span id="cb16-33"><a href="#cb16-33" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> _, tied_rows <span class="kw">in</span> groupby(rows, key<span class="op">=</span>key_function):</span>
-<span id="cb16-34"><a href="#cb16-34" aria-hidden="true" tabindex="-1"></a>        tied_rows <span class="op">=</span> <span class="bu">list</span>(tied_rows)</span>
-<span id="cb16-35"><a href="#cb16-35" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="bu">len</span>(tied_rows) <span class="op">==</span> <span class="dv">1</span>:</span>
-<span id="cb16-36"><a href="#cb16-36" aria-hidden="true" tabindex="-1"></a>            ranked.extend(tied_rows)</span>
-<span id="cb16-37"><a href="#cb16-37" aria-hidden="true" tabindex="-1"></a>            <span class="cf">continue</span></span>
-<span id="cb16-38"><a href="#cb16-38" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-39"><a href="#cb16-39" aria-hidden="true" tabindex="-1"></a>        tied_teams <span class="op">=</span> {row[<span class="st">"team"</span>] <span class="cf">for</span> row <span class="kw">in</span> tied_rows}</span>
-<span id="cb16-40"><a href="#cb16-40" aria-hidden="true" tabindex="-1"></a>        head_to_head <span class="op">=</span> calculate_table(tied_teams, results)</span>
-<span id="cb16-41"><a href="#cb16-41" aria-hidden="true" tabindex="-1"></a>        lottery <span class="op">=</span> {team: rng.random() <span class="cf">for</span> team <span class="kw">in</span> tied_teams}</span>
-<span id="cb16-42"><a href="#cb16-42" aria-hidden="true" tabindex="-1"></a>        tied_rows.sort(</span>
-<span id="cb16-43"><a href="#cb16-43" aria-hidden="true" tabindex="-1"></a>            key<span class="op">=</span><span class="kw">lambda</span> row: (</span>
-<span id="cb16-44"><a href="#cb16-44" aria-hidden="true" tabindex="-1"></a>                head_to_head[row[<span class="st">"team"</span>]][<span class="st">"points"</span>],</span>
-<span id="cb16-45"><a href="#cb16-45" aria-hidden="true" tabindex="-1"></a>                head_to_head[row[<span class="st">"team"</span>]][<span class="st">"gd"</span>],</span>
-<span id="cb16-46"><a href="#cb16-46" aria-hidden="true" tabindex="-1"></a>                head_to_head[row[<span class="st">"team"</span>]][<span class="st">"gf"</span>],</span>
-<span id="cb16-47"><a href="#cb16-47" aria-hidden="true" tabindex="-1"></a>                lottery[row[<span class="st">"team"</span>]],</span>
-<span id="cb16-48"><a href="#cb16-48" aria-hidden="true" tabindex="-1"></a>            ),</span>
-<span id="cb16-49"><a href="#cb16-49" aria-hidden="true" tabindex="-1"></a>            reverse<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb16-50"><a href="#cb16-50" aria-hidden="true" tabindex="-1"></a>        )</span>
-<span id="cb16-51"><a href="#cb16-51" aria-hidden="true" tabindex="-1"></a>        ranked.extend(tied_rows)</span>
-<span id="cb16-52"><a href="#cb16-52" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> ranked</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Group ranking helpers are imported from wc2026_predictor.simulation.</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="co"># They are kept in src/ so scripts, tests, and notebooks all use the same tie-break behavior.</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
-<div id="group-data" class="cell" data-execution_count="175">
+<div id="group-data" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-06-29T06:34:48.694217Z&quot;,&quot;iopub.status.busy&quot;:&quot;2026-06-29T06:34:48.693910Z&quot;,&quot;iopub.status.idle&quot;:&quot;2026-06-29T06:34:48.728446Z&quot;,&quot;shell.execute_reply&quot;:&quot;2026-06-29T06:34:48.727552Z&quot;}}" data-execution_count="12">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>group_data <span class="op">=</span> []</span>
-<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> group <span class="kw">in</span> groups:</span>
-<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>    played <span class="op">=</span> wc2026_played[</span>
-<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>        wc2026_played[<span class="st">"home_team"</span>].isin(group)</span>
-<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>        <span class="op">&amp;</span> wc2026_played[<span class="st">"away_team"</span>].isin(group)</span>
-<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>    ]</span>
-<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>    future <span class="op">=</span> wc2026_upcoming[</span>
-<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>        wc2026_upcoming[<span class="st">"home_team"</span>].isin(group)</span>
-<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a>        <span class="op">&amp;</span> wc2026_upcoming[<span class="st">"away_team"</span>].isin(group)</span>
-<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a>    ]</span>
-<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a>    played_results <span class="op">=</span> [</span>
-<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a>        (row.home_team, row.away_team, <span class="bu">int</span>(row.home_score), <span class="bu">int</span>(row.away_score))</span>
-<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> row <span class="kw">in</span> played.itertuples(index<span class="op">=</span><span class="va">False</span>)</span>
-<span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a>    ]</span>
-<span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a>    future_matches <span class="op">=</span> [</span>
-<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a>        (row.home_team, row.away_team, row.home_goal_rate, row.away_goal_rate)</span>
-<span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> row <span class="kw">in</span> future.itertuples(index<span class="op">=</span><span class="va">False</span>)</span>
-<span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a>    ]</span>
-<span id="cb17-19"><a href="#cb17-19" aria-hidden="true" tabindex="-1"></a>    group_data.append({<span class="st">"teams"</span>: group, <span class="st">"played"</span>: played_results, <span class="st">"future"</span>: future_matches})</span>
-<span id="cb17-20"><a href="#cb17-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb17-21"><a href="#cb17-21" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">sum</span>(<span class="bu">len</span>(item[<span class="st">"played"</span>]) <span class="op">+</span> <span class="bu">len</span>(item[<span class="st">"future"</span>]) <span class="cf">for</span> item <span class="kw">in</span> group_data) <span class="op">==</span> <span class="dv">72</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>group_data <span class="op">=</span> []</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> group <span class="kw">in</span> groups:</span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>    played <span class="op">=</span> wc2026_played[</span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>        wc2026_played[<span class="st">"home_team"</span>].isin(group)</span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>        <span class="op">&amp;</span> wc2026_played[<span class="st">"away_team"</span>].isin(group)</span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>    ]</span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>    future <span class="op">=</span> wc2026_upcoming[</span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a>        wc2026_upcoming[<span class="st">"home_team"</span>].isin(group)</span>
+<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>        <span class="op">&amp;</span> wc2026_upcoming[<span class="st">"away_team"</span>].isin(group)</span>
+<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a>    ]</span>
+<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a>    played_results <span class="op">=</span> [</span>
+<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a>        (row.home_team, row.away_team, <span class="bu">int</span>(row.home_score), <span class="bu">int</span>(row.away_score))</span>
+<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> row <span class="kw">in</span> played.itertuples(index<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a>    ]</span>
+<span id="cb19-15"><a href="#cb19-15" aria-hidden="true" tabindex="-1"></a>    future_matches <span class="op">=</span> [</span>
+<span id="cb19-16"><a href="#cb19-16" aria-hidden="true" tabindex="-1"></a>        (row.home_team, row.away_team, row.home_goal_rate, row.away_goal_rate)</span>
+<span id="cb19-17"><a href="#cb19-17" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> row <span class="kw">in</span> future.itertuples(index<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb19-18"><a href="#cb19-18" aria-hidden="true" tabindex="-1"></a>    ]</span>
+<span id="cb19-19"><a href="#cb19-19" aria-hidden="true" tabindex="-1"></a>    group_data.append({<span class="st">"teams"</span>: group, <span class="st">"played"</span>: played_results, <span class="st">"future"</span>: future_matches})</span>
+<span id="cb19-20"><a href="#cb19-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-21"><a href="#cb19-21" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">sum</span>(<span class="bu">len</span>(item[<span class="st">"played"</span>]) <span class="op">+</span> <span class="bu">len</span>(item[<span class="st">"future"</span>]) <span class="cf">for</span> item <span class="kw">in</span> group_data) <span class="op">==</span> <span class="dv">72</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
-<div id="simulation-functions" class="cell" data-execution_count="176">
+<div id="simulation-functions" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-06-29T06:34:48.730681Z&quot;,&quot;iopub.status.busy&quot;:&quot;2026-06-29T06:34:48.730429Z&quot;,&quot;iopub.status.idle&quot;:&quot;2026-06-29T06:34:48.735577Z&quot;,&quot;shell.execute_reply&quot;:&quot;2026-06-29T06:34:48.734892Z&quot;}}" data-execution_count="13">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> simulate_group(group_info, rng):</span>
-<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>    results <span class="op">=</span> <span class="bu">list</span>(group_info[<span class="st">"played"</span>])</span>
-<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> home, away, home_rate, away_rate <span class="kw">in</span> group_info[<span class="st">"future"</span>]:</span>
-<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>        home_goals <span class="op">=</span> <span class="bu">int</span>(rng.poisson(home_rate))</span>
-<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>        away_goals <span class="op">=</span> <span class="bu">int</span>(rng.poisson(away_rate))</span>
-<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>        results.append((home, away, home_goals, away_goals))</span>
-<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> rank_group(group_info[<span class="st">"teams"</span>], results, rng)</span>
-<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> run_group_stage(group_data, rng):</span>
-<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a>    standings <span class="op">=</span> [simulate_group(group_info, rng) <span class="cf">for</span> group_info <span class="kw">in</span> group_data]</span>
-<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a>    first_place <span class="op">=</span> [table[<span class="dv">0</span>][<span class="st">"team"</span>] <span class="cf">for</span> table <span class="kw">in</span> standings]</span>
-<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a>    second_place <span class="op">=</span> [table[<span class="dv">1</span>][<span class="st">"team"</span>] <span class="cf">for</span> table <span class="kw">in</span> standings]</span>
-<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a>    third_place <span class="op">=</span> [table[<span class="dv">2</span>] <span class="cf">for</span> table <span class="kw">in</span> standings]</span>
-<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a>    third_lottery <span class="op">=</span> {row[<span class="st">"team"</span>]: rng.random() <span class="cf">for</span> row <span class="kw">in</span> third_place}</span>
-<span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a>    third_place.sort(</span>
-<span id="cb18-18"><a href="#cb18-18" aria-hidden="true" tabindex="-1"></a>        key<span class="op">=</span><span class="kw">lambda</span> row: (row[<span class="st">"points"</span>], row[<span class="st">"gd"</span>], row[<span class="st">"gf"</span>], third_lottery[row[<span class="st">"team"</span>]]),</span>
-<span id="cb18-19"><a href="#cb18-19" aria-hidden="true" tabindex="-1"></a>        reverse<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb18-20"><a href="#cb18-20" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb18-21"><a href="#cb18-21" aria-hidden="true" tabindex="-1"></a>    qualified <span class="op">=</span> <span class="bu">set</span>(first_place <span class="op">+</span> second_place <span class="op">+</span> [row[<span class="st">"team"</span>] <span class="cf">for</span> row <span class="kw">in</span> third_place[:<span class="dv">8</span>]])</span>
-<span id="cb18-22"><a href="#cb18-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">len</span>(qualified) <span class="op">==</span> <span class="dv">32</span></span>
-<span id="cb18-23"><a href="#cb18-23" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> qualified</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> simulate_group(group_info, rng):</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    results <span class="op">=</span> <span class="bu">list</span>(group_info[<span class="st">"played"</span>])</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> home, away, home_rate, away_rate <span class="kw">in</span> group_info[<span class="st">"future"</span>]:</span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>        home_goals <span class="op">=</span> <span class="bu">int</span>(rng.poisson(home_rate))</span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>        away_goals <span class="op">=</span> <span class="bu">int</span>(rng.poisson(away_rate))</span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a>        results.append((home, away, home_goals, away_goals))</span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> rank_group(group_info[<span class="st">"teams"</span>], results, rng)</span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> run_group_stage(group_data, rng):</span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a>    standings <span class="op">=</span> [simulate_group(group_info, rng) <span class="cf">for</span> group_info <span class="kw">in</span> group_data]</span>
+<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a>    first_place <span class="op">=</span> [table[<span class="dv">0</span>][<span class="st">"team"</span>] <span class="cf">for</span> table <span class="kw">in</span> standings]</span>
+<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a>    second_place <span class="op">=</span> [table[<span class="dv">1</span>][<span class="st">"team"</span>] <span class="cf">for</span> table <span class="kw">in</span> standings]</span>
+<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a>    third_place <span class="op">=</span> [table[<span class="dv">2</span>] <span class="cf">for</span> table <span class="kw">in</span> standings]</span>
+<span id="cb20-15"><a href="#cb20-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-16"><a href="#cb20-16" aria-hidden="true" tabindex="-1"></a>    third_lottery <span class="op">=</span> {row[<span class="st">"team"</span>]: rng.random() <span class="cf">for</span> row <span class="kw">in</span> third_place}</span>
+<span id="cb20-17"><a href="#cb20-17" aria-hidden="true" tabindex="-1"></a>    third_place.sort(</span>
+<span id="cb20-18"><a href="#cb20-18" aria-hidden="true" tabindex="-1"></a>        key<span class="op">=</span><span class="kw">lambda</span> row: (row[<span class="st">"points"</span>], row[<span class="st">"gd"</span>], row[<span class="st">"gf"</span>], third_lottery[row[<span class="st">"team"</span>]]),</span>
+<span id="cb20-19"><a href="#cb20-19" aria-hidden="true" tabindex="-1"></a>        reverse<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb20-20"><a href="#cb20-20" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb20-21"><a href="#cb20-21" aria-hidden="true" tabindex="-1"></a>    qualified <span class="op">=</span> <span class="bu">set</span>(first_place <span class="op">+</span> second_place <span class="op">+</span> [row[<span class="st">"team"</span>] <span class="cf">for</span> row <span class="kw">in</span> third_place[:<span class="dv">8</span>]])</span>
+<span id="cb20-22"><a href="#cb20-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">len</span>(qualified) <span class="op">==</span> <span class="dv">32</span></span>
+<span id="cb20-23"><a href="#cb20-23" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> qualified</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
-<div id="run-simulation" class="cell" data-execution_count="177">
+<div id="run-simulation" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;execution&quot;,&quot;value&quot;:{&quot;iopub.execute_input&quot;:&quot;2026-06-29T06:34:48.737171Z&quot;,&quot;iopub.status.busy&quot;:&quot;2026-06-29T06:34:48.736942Z&quot;,&quot;iopub.status.idle&quot;:&quot;2026-06-29T06:34:50.287169Z&quot;,&quot;shell.execute_reply&quot;:&quot;2026-06-29T06:34:50.286481Z&quot;}}" data-execution_count="14">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>N_SIMULATIONS <span class="op">=</span> <span class="dv">10_000</span></span>
-<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>rng <span class="op">=</span> np.random.default_rng(<span class="dv">42</span>)</span>
-<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>advance_count <span class="op">=</span> {team: <span class="dv">0</span> <span class="cf">for</span> group <span class="kw">in</span> groups <span class="cf">for</span> team <span class="kw">in</span> group}</span>
-<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> _ <span class="kw">in</span> <span class="bu">range</span>(N_SIMULATIONS):</span>
-<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> team <span class="kw">in</span> run_group_stage(group_data, rng):</span>
-<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>        advance_count[team] <span class="op">+=</span> <span class="dv">1</span></span>
-<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>advance_probabilities <span class="op">=</span> (</span>
-<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a>    pd.DataFrame({</span>
-<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a>        <span class="st">"team"</span>: <span class="bu">list</span>(advance_count),</span>
-<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a>        <span class="st">"advance_probability"</span>: [count <span class="op">/</span> N_SIMULATIONS <span class="cf">for</span> count <span class="kw">in</span> advance_count.values()],</span>
-<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a>    .sort_values(<span class="st">"advance_probability"</span>, ascending<span class="op">=</span><span class="va">False</span>)</span>
-<span id="cb19-15"><a href="#cb19-15" aria-hidden="true" tabindex="-1"></a>    .reset_index(drop<span class="op">=</span><span class="va">True</span>)</span>
-<span id="cb19-16"><a href="#cb19-16" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb19-17"><a href="#cb19-17" aria-hidden="true" tabindex="-1"></a>advance_probabilities</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>N_SIMULATIONS <span class="op">=</span> <span class="dv">10_000</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>rng <span class="op">=</span> np.random.default_rng(<span class="dv">42</span>)</span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>advance_count <span class="op">=</span> {team: <span class="dv">0</span> <span class="cf">for</span> group <span class="kw">in</span> groups <span class="cf">for</span> team <span class="kw">in</span> group}</span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> _ <span class="kw">in</span> <span class="bu">range</span>(N_SIMULATIONS):</span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> team <span class="kw">in</span> run_group_stage(group_data, rng):</span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a>        advance_count[team] <span class="op">+=</span> <span class="dv">1</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a>advance_probabilities <span class="op">=</span> (</span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a>    pd.DataFrame({</span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a>        <span class="st">"team"</span>: <span class="bu">list</span>(advance_count),</span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a>        <span class="st">"advance_probability"</span>: [count <span class="op">/</span> N_SIMULATIONS <span class="cf">for</span> count <span class="kw">in</span> advance_count.values()],</span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a>    .sort_values(<span class="st">"advance_probability"</span>, ascending<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb21-15"><a href="#cb21-15" aria-hidden="true" tabindex="-1"></a>    .reset_index(drop<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb21-16"><a href="#cb21-16" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb21-17"><a href="#cb21-17" aria-hidden="true" tabindex="-1"></a>advance_probabilities</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
-<div class="cell-output cell-output-display" data-execution_count="177">
+<div class="cell-output cell-output-display" data-execution_count="14">
 <div>
 
 
@@ -2433,17 +981,17 @@ forceTheme('sk-container-id-1');</script>
 <tr class="odd">
 <th data-quarto-table-cell-role="th">22</th>
 <td>Portugal</td>
-<td>0.8068</td>
+<td>0.8064</td>
 </tr>
 <tr class="even">
 <th data-quarto-table-cell-role="th">23</th>
 <td>Iran</td>
-<td>0.7795</td>
+<td>0.7790</td>
 </tr>
 <tr class="odd">
 <th data-quarto-table-cell-role="th">24</th>
 <td>Belgium</td>
-<td>0.7661</td>
+<td>0.7666</td>
 </tr>
 <tr class="even">
 <th data-quarto-table-cell-role="th">25</th>
@@ -2463,7 +1011,7 @@ forceTheme('sk-container-id-1');</script>
 <tr class="odd">
 <th data-quarto-table-cell-role="th">28</th>
 <td>DR Congo</td>
-<td>0.5754</td>
+<td>0.5757</td>
 </tr>
 <tr class="even">
 <th data-quarto-table-cell-role="th">29</th>
@@ -2488,7 +1036,7 @@ forceTheme('sk-container-id-1');</script>
 <tr class="even">
 <th data-quarto-table-cell-role="th">33</th>
 <td>Uzbekistan</td>
-<td>0.4666</td>
+<td>0.4667</td>
 </tr>
 <tr class="odd">
 <th data-quarto-table-cell-role="th">34</th>

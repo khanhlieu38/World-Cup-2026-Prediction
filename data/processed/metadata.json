@@ -1,0 +1,18 @@
+{
+  "source_url": "https://raw.githubusercontent.com/martj42/international_results/master/results.csv",
+  "retrieved_at": "2026-06-23T13:42:00+10:00",
+  "as_of_date": "2026-06-21",
+  "portfolio_audit_date": "2026-06-29",
+  "status": "snapshot; not a live forecast",
+  "row_counts": {
+    "matches_features": 10784,
+    "upcoming_matches": 32,
+    "world_cup_2026_played_group_matches": 40,
+    "world_cup_2026_upcoming_group_matches": 32
+  },
+  "notes": [
+    "The processed data is intentionally versioned as a portfolio snapshot.",
+    "Matches dated 2026-06-22 through 2026-06-27 are still represented as upcoming in this snapshot.",
+    "Refresh the raw source and rerun the notebooks/scripts before presenting this as a current forecast."
+  ]
+}
